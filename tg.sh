@@ -216,7 +216,7 @@ core_change_port() {
   else
     cp "$TG_CADDY_DIR/site.conf" "$CADDYFILE"
   fi
-  if ! caddy validate --config "$CADDYFILE" >/dev/null 2>&1; then
+  if ! caddy_validate; then
     caddy_restore_backup "$backup"
     error_exit "端口修改失败，已还原" "查看详情: caddy validate --config $CADDYFILE"
   fi
@@ -279,7 +279,7 @@ core_change_hostname() {
   else
     cp "$TG_CADDY_DIR/site.conf" "$CADDYFILE"
   fi
-  if ! caddy validate --config "$CADDYFILE" >/dev/null 2>&1; then
+  if ! caddy_validate; then
     caddy_restore_backup "$backup"
     jq --arg h "$oldhost" '.public_hostname = $h' "$TPROXY_CONFIG" > "$tmp" && mv "$tmp" "$TPROXY_CONFIG"
     error_exit "域名修改失败，已还原" "查看详情: caddy validate --config $CADDYFILE"

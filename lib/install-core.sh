@@ -205,8 +205,9 @@ EOF
 }
 
 # 段 10：mtproxy.env（官方 install.sh 224-274 行，NAT 探测逐行复刻）
+# $2=hostname：add 链路 node.json 尚未写出，探测回落必须显式传，不得读登记
 core_write_mtproxy_env() {
-  local secret="$1"
+  local secret="$1" host="${2:-}"
   local backend_secret="$secret"
   if [ "${backend_secret#dd}" != "$backend_secret" ] && [ ${#backend_secret} -eq 34 ]; then
     backend_secret="${backend_secret:2}"
@@ -225,7 +226,11 @@ core_write_mtproxy_env() {
     fi
   done
   if [ -z "$public_address" ]; then
-    public_address="$(getent ahostsv4 "$(node_get hostname)" 2>/dev/null | awk 'NR==1 {print $1}')"
+    if [ -n "$host" ]; then
+      public_address="$(getent ahostsv4 "$host" 2>/dev/null | awk 'NR==1 {print $1}')"
+    else
+      public_address="$(getent ahostsv4 "$(node_get hostname 2>/dev/null || true)" 2>/dev/null | awk 'NR==1 {print $1}')"
+    fi
   fi
   if [ -n "$local_address" ] && [ -n "$public_address" ] && [ "$local_address" != "$public_address" ]; then
     mtproxy_nat_args="--nat-info $local_address:$public_address"
@@ -311,7 +316,7 @@ core_install_mode_a() {
   fi
   local public_source='  "public_dir": "'"$TPROXY_SITE_ROOT"'",'
   core_write_config "$host" "$(core_gen_base_path)" "$secret" "$public_source"
-  core_write_mtproxy_env "$secret"
+  core_write_mtproxy_env "$secret" "$host"
   core_install_caddy_config "$host" "$email"
   core_install_units
   core_start_services "$host" "$email"
@@ -340,7 +345,7 @@ core_install_mode_b() {
   fi
   local public_source='  "public_dir": "'"$TPROXY_SITE_ROOT"'",'
   core_write_config "$host" "$(core_gen_base_path)" "$secret" "$public_source"
-  core_write_mtproxy_env "$secret"
+  core_write_mtproxy_env "$secret" "$host"
   core_install_caddy_config "$host" "$email"
   core_install_units
   # 此刻 caddy restart 会因 443 冲突失败（官方语义），跳过整体启动段
@@ -358,7 +363,7 @@ core_install_mode_b() {
   # 接管 Caddyfile：重写为用户指定端口的 site block
   local backup
   backup=$(caddy_backup)
-  caddy_render_site "$host" "$port" "$(core_official_get '.base_path // ""')"
+  caddy_render_site "$host" "$port" "$(core_official_get '.base_path // ""')" "$email"
   cp "$TG_CADDY_DIR/site.conf" "$CADDYFILE"
   caddy_apply
   systemctl restart caddy 2>/dev/null || true
@@ -389,7 +394,7 @@ core_install_mode_c() {
   fi
   local public_source='  "public_dir": "'"$TPROXY_SITE_ROOT"'",'
   core_write_config "$host" "$(core_gen_base_path)" "$secret" "$public_source"
-  core_write_mtproxy_env "$secret"
+  core_write_mtproxy_env "$secret" "$host"
   core_install_caddy_config "$host" "$email"
   core_install_units
 
@@ -404,9 +409,9 @@ core_install_mode_c() {
   fi
 
   # 追加我们的 site block
-  caddy_render_site "$host" "$port" "$(core_official_get '.base_path // ""')"
+  caddy_render_site "$host" "$port" "$(core_official_get '.base_path // ""')" "$email"
   caddy_attach_fragment
-  if ! caddy validate --config "$CADDYFILE" >/dev/null 2>&1; then
+  if ! caddy_validate; then
     caddy_restore_backup "$pre_backup"
     error_exit "Caddy 配置校验失败，已还原原 Caddyfile" "查看详情: caddy validate --config $CADDYFILE，修复后重试 tg add"
   fi

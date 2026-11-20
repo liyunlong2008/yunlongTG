@@ -2,6 +2,39 @@
 # lib/uninstall-core.sh — tg del / tg uninstall 编排（design.md 第 6 节）
 # 无官方卸载器：自写。卸载前二次确认；按模式还原或摘除 Caddy site block。
 
+# 半套残留判定：无登记但部署产物还在（add 中断/装坏版后常见状态）
+core_has_deploy_remnants() {
+  [ -f "$TPROXY_CONFIG" ] || [ -f "$MPROXY_ENV" ] \
+    || [ -x "$CORE_BIN" ] || systemctl list-unit-files 2>/dev/null | grep -q '^tproxy-server\.service'
+}
+
+# 清半套残留：停服务 → 删单元/二进制/配置 → 摘我们的 Caddy 片段
+# 不动 node.json（本就没有）；脚本本体不动（uninstall 收尾段负责）
+core_cleanup_remnants() {
+  info "正在停止残留服务..."
+  local svc
+  for svc in tproxy-server mtproxy tproxy-firewall refresh-mtproxy-config.timer caddy; do
+    systemctl disable --now "$svc" >/dev/null 2>&1 || true
+  done
+  info "正在删除残留组件..."
+  rm -f "$SYSTEMD_UNIT_DIR/tproxy-server.service" \
+        "$SYSTEMD_UNIT_DIR/mtproxy.service" \
+        "$SYSTEMD_UNIT_DIR/tproxy-firewall.service" \
+        "$SYSTEMD_UNIT_DIR/refresh-mtproxy-config.timer" \
+        "$SYSTEMD_UNIT_DIR/refresh-mtproxy-config.service" \
+        "$SYSTEMD_UNIT_DIR/caddy.service.d/tproxy.conf" 2>/dev/null || true
+  systemctl daemon-reload
+  rm -f "$CORE_BIN" 2>/dev/null || true
+  rm -rf "$(dirname "$TPROXY_CONFIG")" "$(dirname "$MPROXY_ENV")" "$TPROXY_SITE_ROOT" 2>/dev/null || true
+  # Caddyfile 处理：无登记就没有 before-tg 备份记录，只摘我们的片段
+  if [ -f "$CADDYFILE" ] && grep -qF "import $TG_CADDY_DIR/*.conf" "$CADDYFILE"; then
+    caddy_detach_fragment
+  fi
+  rm -rf "$TG_CADDY_DIR"
+  # 残留的官方接管副本（Caddyfile.tproxy / before-tproxy.*）一并清掉
+  rm -f "$(dirname "$CADDYFILE")/Caddyfile.tproxy" 2>/dev/null || true
+}
+
 core_del() {
   node_exists_check
   warn "即将删除节点，所有服务停止，配置清除"
@@ -26,7 +59,7 @@ core_del() {
     if [ -n "$backup" ] && [ -f "$backup" ]; then
       info "正在还原原 Caddyfile..."
       cp -a "$backup" "$CADDYFILE"
-      if caddy validate --config "$CADDYFILE" >/dev/null 2>&1; then
+      if caddy_validate; then
         systemctl reload caddy
       else
         warn "还原后 validate 未过，请手工检查 $CADDYFILE"
@@ -70,9 +103,16 @@ core_del() {
 }
 
 core_uninstall() {
-  # 空态行为与 del/info 一致：无登记即视为未安装
+  # 半套残留（部署中断：组件在、无登记）也要能清干净
   if ! node_exists; then
-    error_exit "本机未安装，无需卸载" "安装用一键安装命令，查看帮助用 tg help"
+    if ! core_has_deploy_remnants; then
+      error_exit "本机未安装，无需卸载" "安装用一键安装命令，查看帮助用 tg help"
+    fi
+    warn "检测到部署残留（无节点登记）"
+    confirm "确认清理残留？" || { info "已取消"; return 0; }
+    core_cleanup_remnants
+    success "残留清理完成"
+    return 0
   fi
   warn "即将卸载 ${BRAND} 脚本（不影响已装节点）"
   confirm "确认卸载？" || { info "已取消"; return 0; }

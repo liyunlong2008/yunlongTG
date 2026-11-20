@@ -29,13 +29,16 @@ caddy_fragment_dir() { mkdir -p "$TG_CADDY_DIR"; chmod 755 "$TG_CADDY_DIR"; }
 
 # 渲染 site block 到 $TG_CADDY_DIR/site.conf
 # $1=hostname $2=port $3=base_path（来自 config.json，只读）
+# $4=email（可选）：add 链路 node.json 尚未写出，必须显式传；
+#   省略时读登记（change 等装后路径），仍无则 admin@$host 兜底
 caddy_render_site() {
   local host="$1" port="$2" base="$3"
-  caddy_fragment_dir
-  # ACME 邮箱：add 时登记到 node.json，change 时由调用方先行更新
-  local acme_email
-  acme_email=$(node_get email)
+  local acme_email="${4:-}"
+  if [ -z "$acme_email" ]; then
+    acme_email=$(node_get email 2>/dev/null || true)
+  fi
   [ -n "$acme_email" ] || acme_email="admin@$host"
+  caddy_fragment_dir
   local site_addr
   if [ "$port" = "443" ]; then
     site_addr="$host"
@@ -86,8 +89,26 @@ caddy_detach_fragment() {
 }
 
 # validate + reload（失败不自动还原，由调用方决定，避免重复还原逻辑）
+# validate 统一走 caddy 服务的 drop-in 环境（与 reload 同环境，Bug #6 次修）：
+# Caddyfile 官方模板含 {$ACME_EMAIL}/{$TPROXY_HOSTNAME} 占位符，裸 validate 会假失败
+caddy_validate() {
+  # drop-in 取值：systemctl show 读运行时环境；读不到则用我们 drop-in 的等价默认
+  local env_tproxy_host env_site_root env_acme_email
+  env_tproxy_host=$(systemctl show -p Environment caddy.service 2>/dev/null \
+    | tr ' ' '\n' | sed -n 's/^TPROXY_HOSTNAME=//p' | head -1)
+  env_site_root=$(systemctl show -p Environment caddy.service 2>/dev/null \
+    | tr ' ' '\n' | sed -n 's/^TPROXY_SITE_ROOT=//p' | head -1 | tr -d '"')
+  env_acme_email=$(systemctl show -p Environment caddy.service 2>/dev/null \
+    | tr ' ' '\n' | sed -n 's/^ACME_EMAIL=//p' | head -1)
+  env_tproxy_host="${env_tproxy_host:-$(node_get hostname 2>/dev/null || true)}"
+  env_site_root="${env_site_root:-${TPROXY_SITE_ROOT:-/srv/tproxy-site}}"
+  env_acme_email="${env_acme_email:-$(node_get email 2>/dev/null || true)}"
+  TPROXY_HOSTNAME="$env_tproxy_host" TPROXY_SITE_ROOT="$env_site_root" ACME_EMAIL="$env_acme_email" \
+    caddy validate --config "$CADDYFILE" --adapter caddyfile >/dev/null 2>&1
+}
+
 caddy_apply() {
-  caddy validate --config "$CADDYFILE" >/dev/null 2>&1 || error_exit "Caddy 配置校验失败" "查看详情: caddy validate --config $CADDYFILE，修复后执行 systemctl reload caddy"
+  caddy_validate || error_exit "Caddy 配置校验失败" "查看详情: caddy validate --config $CADDYFILE，修复后执行 systemctl reload caddy"
   systemctl reload caddy || error_exit "caddy reload 失败" "查看日志: journalctl -u caddy -n 50"
 }
 
