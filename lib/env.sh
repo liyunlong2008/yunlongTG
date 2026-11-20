@@ -34,6 +34,8 @@ VERSION_FILE="${VERSION_FILE:-$TG_SHARE_DIR/VERSION}"
 TPROXY_CONFIG="${TPROXY_CONFIG:-/etc/tproxy-server/config.json}"
 TPROXY_PROFILES="${TPROXY_PROFILES:-/etc/tproxy-server/profiles.json}"
 MPROXY_ENV="${MPROXY_ENV:-/etc/mtproxy/mtproxy.env}"
+# MTProxy 预置产物根目录（流水线预编译落位；官方 install-mtproxy.sh 编译目标亦在此）
+MPROXY_HOME="${MPROXY_HOME:-/opt/MTProxy}"
 CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
 CADDY_SERVICE="${CADDY_SERVICE:-/etc/systemd/system/caddy.service}"
 SYSTEMD_UNIT_DIR="${SYSTEMD_UNIT_DIR:-/etc/systemd/system}"

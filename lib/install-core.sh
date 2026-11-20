@@ -143,20 +143,20 @@ core_install_caddy() {
 }
 
 # 段 5：MTProxy 部署 = 官方 install-mtproxy.sh 原样跑
-# 流水线产物预置 /opt/MTProxy/objs/bin/mtproto-proxy + .tproxy-commit → 官方自动跳过编译段
+# 流水线产物预置 "$MPROXY_HOME/objs/bin/mtproto-proxy + .tproxy-commit → 官方自动跳过编译段
 core_install_mtproxy() {
   local bindir="$1"
   if ! id mtproxy >/dev/null 2>&1; then
     useradd --system --home /nonexistent --shell /usr/sbin/nologin mtproxy
   fi
   # 预置预编译产物（官方 install-mtproxy.sh 24-26 行检测匹配即跳过编译）
-  if [ ! -x /opt/MTProxy/objs/bin/mtproto-proxy ] \
-    || [ ! -f /opt/MTProxy/.tproxy-commit ] \
-    || ! grep -Fxq 'f36d8af769ffaeac36978d38c2c0f6d1104c2137' /opt/MTProxy/.tproxy-commit; then
-    install -d -o mtproxy -g mtproxy -m 0755 /opt/MTProxy/objs/bin
-    install -o root -g root -m 0755 "$bindir/mtproto-proxy" /opt/MTProxy/objs/bin/mtproto-proxy
-    printf '%s\n' 'f36d8af769ffaeac36978d38c2c0f6d1104c2137' > /opt/MTProxy/.tproxy-commit
-    chown root:root /opt/MTProxy/.tproxy-commit
+  if [ ! -x "$MPROXY_HOME/objs/bin/mtproto-proxy" ] \
+    || [ ! -f "$MPROXY_HOME/.tproxy-commit" ] \
+    || ! grep -Fxq 'f36d8af769ffaeac36978d38c2c0f6d1104c2137' "$MPROXY_HOME/.tproxy-commit"; then
+    install -d -o mtproxy -g mtproxy -m 0755 "$MPROXY_HOME/objs/bin"
+    install -o root -g root -m 0755 "$bindir/mtproto-proxy" "$MPROXY_HOME/objs/bin/mtproto-proxy"
+    printf '%s\n' 'f36d8af769ffaeac36978d38c2c0f6d1104c2137' > "$MPROXY_HOME/.tproxy-commit"
+    chown root:root "$MPROXY_HOME/.tproxy-commit"
   fi
   # 官方脚本原样跑：normalize 权限 + 代理秘钥/配置下载段必须让它执行（官方逻辑）
   bash "$TPROXY_SRC_DIR/deploy/install-mtproxy.sh"
@@ -366,7 +366,6 @@ core_install_mode_b() {
   caddy_render_site "$host" "$port" "$(core_official_get '.base_path // ""')" "$email"
   cp "$TG_CADDY_DIR/site.conf" "$CADDYFILE"
   caddy_apply
-  systemctl restart caddy 2>/dev/null || true
   core_wait_ready 20 || error_exit "tproxy 未就绪" "查看日志: journalctl -u tproxy-server -n 50"
   CADDY_BACKUP="$backup"
   CADDY_SHARED="false"

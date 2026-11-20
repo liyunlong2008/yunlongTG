@@ -25,14 +25,15 @@ core_cleanup_remnants() {
         "$SYSTEMD_UNIT_DIR/caddy.service.d/tproxy.conf" 2>/dev/null || true
   systemctl daemon-reload
   rm -f "$CORE_BIN" 2>/dev/null || true
-  rm -rf "$(dirname "$TPROXY_CONFIG")" "$(dirname "$MPROXY_ENV")" "$TPROXY_SITE_ROOT" 2>/dev/null || true
+  rm -rf "$(dirname "$TPROXY_CONFIG")" "$(dirname "$MPROXY_ENV")" "$MPROXY_HOME" "$TPROXY_SITE_ROOT" 2>/dev/null || true
   # Caddyfile 处理：无登记就没有 before-tg 备份记录，只摘我们的片段
   if [ -f "$CADDYFILE" ] && grep -qF "import $TG_CADDY_DIR/*.conf" "$CADDYFILE"; then
     caddy_detach_fragment
   fi
   rm -rf "$TG_CADDY_DIR"
-  # 残留的官方接管副本（Caddyfile.tproxy / before-tproxy.*）一并清掉
-  rm -f "$(dirname "$CADDYFILE")/Caddyfile.tproxy" 2>/dev/null || true
+  # 清我们的 Caddyfile 备份与官方接管副本（残留场景无登记，备份无还原用途）
+  rm -f "${CADDY_BACKUP_PREFIX}".* 2>/dev/null || true
+  rm -f "$(dirname "$CADDYFILE")/Caddyfile.tproxy" "$(dirname "$CADDYFILE")"/Caddyfile.before-tproxy.* 2>/dev/null || true
 }
 
 core_del() {
@@ -76,7 +77,8 @@ core_del() {
     fi
   fi
 
-  # 3. 删官方单元与二进制
+  # 3. 删官方单元与二进制（caddy 二进制保留：重装复用；/opt/MTProxy 连预置产物一并清：
+  #    重装时流水线会重新下载预置产物，保留反而藏旧版本）
   info "正在删除官方组件..."
   rm -f /etc/systemd/system/tproxy-server.service \
         /etc/systemd/system/mtproxy.service \
@@ -84,8 +86,10 @@ core_del() {
         /etc/systemd/system/refresh-mtproxy-config.timer \
         /etc/systemd/system/refresh-mtproxy-config.service 2>/dev/null || true
   systemctl daemon-reload
-  rm -f /usr/local/bin/tproxy-server /usr/local/bin/caddy 2>/dev/null || true
-  rm -rf /etc/tproxy-server /etc/mtproxy /srv/tproxy-site 2>/dev/null || true
+  rm -f /usr/local/bin/tproxy-server 2>/dev/null || true
+  rm -rf /etc/tproxy-server /etc/mtproxy "$MPROXY_HOME" /srv/tproxy-site 2>/dev/null || true
+  # 清我们的 Caddyfile 备份（有正常用途的场景已在上一步还原/摘除完）
+  rm -f "${CADDY_BACKUP_PREFIX}".* 2>/dev/null || true
 
   # 4. nftables 官方规则清除（如有）
   if command -v nft >/dev/null 2>&1 && [ -f /etc/nftables.conf ]; then
