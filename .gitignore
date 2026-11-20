@@ -1,0 +1,24 @@
+# 本地文档不进仓库（用户拍板）
+docs/
+
+# 伪装站生成产物（运行时生成到 /srv/tproxy-site）
+site-out/
+*.html
+!site-templates/*.html
+
+# 测试/临时脚本
+test/
+tests/
+*.tmp.sh
+.tmp-*
+tmp/
+
+# 密钥与真实环境信息
+*.env
+secrets/
+node.json
+VERSION
+
+# 系统文件
+.DS_Store
+Thumbs.db

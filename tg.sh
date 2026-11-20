@@ -1,0 +1,408 @@
+#!/usr/bin/env bash
+# tg.sh — 云龙TG 主入口：菜单 + 子命令分发
+# 轻命令（info/url/qr/status/start/stop/restart/log）在此直接实现；
+# 重编排（add/update/del/change）在 lib/*-core.sh。
+
+set -e
+cd "$(dirname "$0")" || exit 1
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="$SCRIPT_DIR/lib"
+
+# shellcheck source=lib/env.sh
+. "$LIB_DIR/env.sh"
+# shellcheck source=lib/util.sh
+. "$LIB_DIR/util.sh"
+# shellcheck source=lib/detect.sh
+. "$LIB_DIR/detect.sh"
+# shellcheck source=lib/node.sh
+. "$LIB_DIR/node.sh"
+# shellcheck source=lib/site.sh
+. "$LIB_DIR/site.sh"
+# shellcheck source=lib/caddy.sh
+. "$LIB_DIR/caddy.sh"
+# shellcheck source=lib/install-core.sh
+. "$LIB_DIR/install-core.sh"
+# shellcheck source=lib/update-core.sh
+. "$LIB_DIR/update-core.sh"
+# shellcheck source=lib/uninstall-core.sh
+. "$LIB_DIR/uninstall-core.sh"
+
+# ============================================================
+# tg info
+# ============================================================
+cmd_info() {
+  node_exists_check
+  echo "节点信息："
+  echo "  域名      $(node_get hostname)"
+  echo "  端口      $(node_get port)"
+  echo "  路径      /$(node_get base_path)"
+  echo "  模式      $(node_get mode)"
+  echo "  邮箱      $(node_get email)"
+  echo "  安装时间  $(node_get installed_at)"
+  echo "  relay 版本 $(node_get relay_version)"
+  echo ""
+  echo "服务状态："
+  local svc
+  for svc in caddy tproxy-server mtproxy; do
+    if systemctl list-unit-files 2>/dev/null | grep -q "^$svc\.service"; then
+      printf '  %-14s %s\n' "$svc" "$(systemctl is-active "$svc" 2>/dev/null || echo inactive)"
+    fi
+  done
+  if svc_active tproxy-server; then
+    if curl -fsS --max-time 2 http://127.0.0.1:8081/readyz >/dev/null 2>&1; then
+      echo "  readyz      正常"
+    else
+      echo "  readyz      异常"
+    fi
+  fi
+}
+
+# ============================================================
+# tg url — 按 design.md 1.6 拼链接
+# ============================================================
+cmd_url() {
+  node_exists_check
+  local host base secret port server secret_field
+  host=$(node_get hostname)
+  base=$(node_get base_path)
+  secret=$(node_get secret)
+  port=$(node_get port)
+
+  if [ -n "$base" ] && [ "$base" != "none" ]; then
+    server="$host/$base"
+    # base64url(0x70 + hex secret)
+    secret_field=$(printf '70%s' "$secret" | xxd -r -p | base64 | tr '+/' '-_' | tr -d '=')
+  else
+    server="$host"
+    secret_field="$secret"
+  fi
+  [ "$port" != "443" ] && server="$server:$port"
+
+  echo "https://t.me/webproxy?server=$server&secret=$secret_field"
+}
+
+# ============================================================
+# tg qr
+# ============================================================
+cmd_qr() {
+  node_exists_check
+  command -v qrencode >/dev/null 2>&1 || require_cmds qrencode
+  local url png=""
+  url=$(cmd_url_stdout)
+  # 可选 PNG：tg qr /path/to/out.png
+  if [ -n "${1:-}" ]; then
+    png="$1"
+    qrencode -o "$png" -s 8 "$url" && success "二维码已保存: $png"
+  else
+    qrencode -t ANSIUTF8I "$url"
+    echo ""
+    info "链接: $url"
+  fi
+}
+cmd_url_stdout() { cmd_url >/dev/null; cmd_url; }
+
+# ============================================================
+# tg status
+# ============================================================
+cmd_status() {
+  node_exists_check
+  local svc all_ok=0
+  for svc in caddy tproxy-server mtproxy; do
+    if systemctl list-unit-files 2>/dev/null | grep -q "^$svc\.service"; then
+      local st
+      st=$(systemctl is-active "$svc" 2>/dev/null || echo inactive)
+      if [ "$st" = "active" ]; then
+        printf '%-14s %s\n' "$svc" "运行中"
+      else
+        printf '%-14s %s\n' "$svc" "$st"
+        all_ok=1
+      fi
+    fi
+  done
+  if svc_active tproxy-server; then
+    if curl -fsS --max-time 2 http://127.0.0.1:8081/readyz >/dev/null 2>&1; then
+      echo "readyz        正常"
+    else
+      echo "readyz        异常"
+      all_ok=1
+    fi
+  fi
+  [ "$all_ok" -eq 0 ] && success "全部服务正常" || warn "部分服务异常，查看日志用 tg log"
+}
+
+# ============================================================
+# tg start/stop/restart — 按模式决定是否带 caddy
+# ============================================================
+_cmd_service() {
+  local action="$1"
+  node_exists_check
+  local shared caddy_port_is443
+  shared=$(node_get caddy_shared)
+  # 模式 A/C 且端口 443：动 caddy；模式 B（自定义端口）只 reload 不 restart
+  local do_caddy="yes"
+  [ "$shared" = "false" ] && do_caddy="yes"   # A/B/C 都有官方/我们的 caddy
+  local services=(tproxy-server mtproxy)
+  [ "$do_caddy" = "yes" ] && services=("tproxy-server" "mtproxy" "caddy")
+
+  local svc
+  for svc in "${services[@]}"; do
+    if systemctl list-unit-files 2>/dev/null | grep -q "^$svc\.service"; then
+      info "$svc $action..."
+      systemctl "$action" "$svc" || warn "$svc $action 失败，查看日志: journalctl -u $svc -n 50"
+    fi
+  done
+  success "已执行 $action"
+}
+
+cmd_start()   { _cmd_service start; }
+cmd_stop()    { _cmd_service stop; }
+cmd_restart() { _cmd_service restart; }
+
+# ============================================================
+# tg log [tproxy|mtproxy|caddy] [-f]
+# ============================================================
+cmd_log() {
+  node_exists_check
+  local unit="tproxy-server" follow=""
+  case "${1:-}" in
+    tproxy|"") unit="tproxy-server" ;;
+    mtproxy) unit="mtproxy" ;;
+    caddy) unit="caddy" ;;
+    *) error_exit "未知日志源: $1" "可用: tg log [tproxy|mtproxy|caddy]" ;;
+  esac
+  [ "${2:-}" = "-f" ] && follow="-f"
+  journalctl -u "$unit" $follow -n 100 --no-pager
+}
+
+# ============================================================
+# tg change — 端口/密码/域名
+# ============================================================
+cmd_change() {
+  node_exists_check
+  local sub="${1:-}"
+  shift || true
+  case "$sub" in
+    port)   core_change_port "$@" ;;
+    secret) core_change_secret ;;
+    hostname) core_change_hostname "$@" ;;
+    *) error_exit "未知子命令: tg change $sub" "可用: tg change port|secret|hostname" ;;
+  esac
+}
+
+# 改端口：重写 site block → validate → reload → node.json
+core_change_port() {
+  local newport="$1"
+  [ -n "$newport" ] || error_exit "缺少端口号" "用法: tg change port <端口>"
+  [[ "$newport" =~ ^[0-9]+$ ]] && [ "$newport" -ge 1 ] && [ "$newport" -le 65535 ] \
+    || error_exit "端口号不合法: $newport" "1-65535 之间的数字"
+  [ "$newport" != "443" ] || { detect_ports; [ "$DETECT_443" = "caddy" ] || warn "443 端口需确认归属，若被其他服务占用会导致 Caddy 启动失败"; }
+
+  local host base backup
+  host=$(node_get hostname)
+  base=$(node_get base_path)
+  backup=$(caddy_backup)
+
+  caddy_render_site "$host" "$newport" "$base"
+  if [ "$(node_get caddy_shared)" = "true" ]; then
+    caddy_attach_fragment
+  else
+    cp "$TG_CADDY_DIR/site.conf" "$CADDYFILE"
+  fi
+  if ! caddy validate --config "$CADDYFILE" >/dev/null 2>&1; then
+    caddy_restore_backup "$backup"
+    error_exit "端口修改失败，已还原" "查看详情: caddy validate --config $CADDYFILE"
+  fi
+  caddy_apply
+  node_save "port=$newport"
+  success "端口已改为 $newport"
+  info "节点链接已变化，重新分发用 tg url"
+}
+
+# 改密码：新 32 hex → 改 profiles.json secret 字段 + mtproxy.env → restart
+core_change_secret() {
+  local new
+  new=$(gen_hex)
+  info "正在生成新密码..."
+  # 官方文档化路径（design.md 6：profiles.json secret 字段 + mtproxy.env）
+  local cur
+  cur=$(jq -r '.secret // empty' "$TPROXY_PROFILES" 2>/dev/null)
+  [ -n "$cur" ] || error_exit "读不到 profiles.json 的 secret 字段" "检查 $TPROXY_PROFILES 是否存在"
+  local tmp; tmp=$(mktemp)
+  jq --arg s "$new" '.secret = $s' "$TPROXY_PROFILES" > "$tmp" \
+    && mv "$tmp" "$TPROXY_PROFILES" \
+    || { rm -f "$tmp"; error_exit "写 profiles.json 失败" "检查文件权限"; }
+  chmod 400 "$TPROXY_PROFILES"
+  # mtproxy.env 里的 SECRET（官方命名，具体键名以官方文件为准）
+  if grep -q '^SECRET=' "$MPROXY_ENV" 2>/dev/null; then
+    sed -i "s/^SECRET=.*/SECRET=$new/" "$MPROXY_ENV"
+  fi
+  systemctl restart tproxy-server mtproxy
+  node_save "secret=$new"
+  success "密码已更换"
+  warn "旧链接全部作废，请重新分发: tg url"
+}
+
+# 改域名：DNS 检测 → config.json public_hostname + site block + caddy.service.d → validate → restart
+core_change_hostname() {
+  local newhost="$1"
+  [ -n "$newhost" ] || error_exit "缺少新域名" "用法: tg change hostname tg2.example.com"
+  detect_dns "$newhost"
+
+  local port base oldhost backup
+  port=$(node_get port)
+  base=$(node_get base_path)
+  oldhost=$(node_get hostname)
+  backup=$(caddy_backup)
+
+  # config.json 只改 public_hostname 字段（design.md 6 允许的字段级改动）
+  local tmp; tmp=$(mktemp)
+  jq --arg h "$newhost" '.public_hostname = $h' "$TPROXY_CONFIG" > "$tmp" \
+    && mv "$tmp" "$TPROXY_CONFIG" \
+    || { rm -f "$tmp"; error_exit "写 config.json 失败" "检查文件权限"; }
+
+  caddy_render_site "$newhost" "$port" "$base"
+  caddy_write_env_hostname "$newhost"
+  if [ "$(node_get caddy_shared)" = "true" ]; then
+    caddy_attach_fragment
+  else
+    cp "$TG_CADDY_DIR/site.conf" "$CADDYFILE"
+  fi
+  if ! caddy validate --config "$CADDYFILE" >/dev/null 2>&1; then
+    caddy_restore_backup "$backup"
+    jq --arg h "$oldhost" '.public_hostname = $h' "$TPROXY_CONFIG" > "$tmp" && mv "$tmp" "$TPROXY_CONFIG"
+    error_exit "域名修改失败，已还原" "查看详情: caddy validate --config $CADDYFILE"
+  fi
+  systemctl restart caddy tproxy-server
+  node_save "hostname=$newhost"
+  success "域名已改为 $newhost"
+  info "节点链接已变化，重新分发用 tg url"
+}
+
+# ============================================================
+# tg add / update / del 分发
+# ============================================================
+cmd_add()     { core_add "$@"; }
+cmd_update()  { core_update "$@"; }
+cmd_del()     { core_del; }
+cmd_uninstall() { core_uninstall; }
+
+# ============================================================
+# 帮助
+# ============================================================
+cmd_help() {
+  echo "用法: tg <命令>"
+  echo ""
+  echo "命令："
+  echo "  add               添加节点"
+  echo "  info              查看节点信息"
+  echo "  url               显示节点链接"
+  echo "  qr                显示二维码（tg qr <file.png> 可存图）"
+  echo "  change            修改端口/密码/域名（tg change port|secret|hostname）"
+  echo "  status            服务状态"
+  echo "  start             启动服务"
+  echo "  stop              停止服务"
+  echo "  restart           重启服务"
+  echo "  log               查看日志（tg log [tproxy|mtproxy|caddy] [-f]）"
+  echo "  update            更新 relay 与脚本"
+  echo "  del               删除节点"
+  echo "  uninstall         卸载本脚本（不影响节点）"
+  echo ""
+  echo "更多说明: man tg 或阅读 README"
+}
+
+# ============================================================
+# 菜单（经典数字选单风格）
+# ============================================================
+show_menu() {
+  echo "==================== ${BRAND} ===================="
+  echo ""
+  if node_exists; then
+    echo " 1. 添加节点          tg add"
+    echo " 2. 查看节点信息      tg info"
+    echo " 3. 显示节点链接      tg url"
+    echo " 4. 显示二维码        tg qr"
+    echo " 5. 修改端口          tg change port"
+    echo " 6. 修改密码          tg change secret"
+    echo " 7. 修改域名          tg change hostname"
+    echo " 8. 查看服务状态      tg status"
+    echo " 9. 启动服务          tg start"
+    echo " 10. 停止服务         tg stop"
+    echo " 11. 重启服务         tg restart"
+    echo " 12. 查看日志         tg log"
+    echo " 13. 更新             tg update"
+    echo " 14. 删除节点         tg del"
+    echo " 15. 卸载脚本         tg uninstall"
+    echo " 0. 退出"
+  else
+    echo " 1. 添加节点          tg add"
+    echo " 2. 查看脚本说明      tg help"
+    echo " 0. 退出"
+  fi
+  echo ""
+}
+
+menu_loop() {
+  while true; do
+    show_menu
+    local choice
+    read -rp "请选择: " choice
+    case "$choice" in
+      1)
+        if node_exists; then
+          warn "已有节点"
+          confirm "强制重新添加？先删除现有节点" && cmd_del && cmd_add
+        else
+          cmd_add
+        fi
+        ;;
+      2) cmd_info ;;
+      3) cmd_url ;;
+      4) cmd_qr ;;
+      5) read -rp "新端口: " p; cmd_change port "$p" ;;
+      6) confirm "确认更换密码？旧链接全部作废" && cmd_change secret ;;
+      7) read -rp "新域名: " h; cmd_change hostname "$h" ;;
+      8) cmd_status ;;
+      9) cmd_start ;;
+      10) cmd_stop ;;
+      11) cmd_restart ;;
+      12) cmd_log tproxy -f ;;
+      13) cmd_update ;;
+      14) confirm "确认删除节点？" && cmd_del ;;
+      15) confirm "确认卸载脚本？（不影响已装节点）" && cmd_uninstall ;;
+      0) exit 0 ;;
+      *) warn "无效选择" ;;
+    esac
+    echo ""
+    read -rp "按回车返回菜单..." _
+  done
+}
+
+# ============================================================
+# 分发
+# ============================================================
+main() {
+  local cmd="${1:-}"
+  [ -n "$cmd" ] || { menu_loop; return; }
+  shift || true
+  case "$cmd" in
+    add)        cmd_add "$@" ;;
+    info)       cmd_info ;;
+    url)        cmd_url ;;
+    qr)         cmd_qr "$@" ;;
+    change)     cmd_change "$@" ;;
+    status)     cmd_status ;;
+    start)      cmd_start ;;
+    stop)       cmd_stop ;;
+    restart)    cmd_restart ;;
+    log)        cmd_log "$@" ;;
+    update)     cmd_update "$@" ;;
+    del)        cmd_del ;;
+    uninstall)  cmd_uninstall ;;
+    help|-h|--help) cmd_help ;;
+    version|--version|-v) echo "${BRAND} $(tg_version)" ;;
+    *) error_exit "未知命令: $cmd" "查看全部命令: tg help" ;;
+  esac
+}
+
+main "$@"
