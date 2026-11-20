@@ -51,7 +51,12 @@ mkdir -p "$TG_SHARE_DIR/lib"
 cp -a "$tmp/lib/." "$TG_SHARE_DIR/lib/"
 cp -a "$tmp/tg.sh" "$TG_BIN"
 chmod +x "$TG_BIN"
-echo "dev" > "$TG_SHARE_DIR/VERSION"
+# 版本号取整包里的 VERSION 文件（发版时写入）；整包缺 VERSION 则写当前发布版
+if [ -f "$tmp/VERSION" ]; then
+  cp -a "$tmp/VERSION" "$TG_SHARE_DIR/VERSION"
+else
+  echo "v1.0.0" > "$TG_SHARE_DIR/VERSION"
+fi
 
 rm -rf "$tmp"
 success "安装完成，请使用 tg 命令进行管理"

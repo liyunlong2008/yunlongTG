@@ -1,0 +1,75 @@
+# 云龙TG 核心构建流水线（design.md 第 7.1 节）
+# 官方 master → go test → go build linux/amd64 → sha256 → core-* prerelease
+# MTProxy（官方 pinned commit）同流水线预构建。失败纪律：任一步失败不发 release。
+
+name: build-core
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 每日 04:30 UTC 跑一次，跟踪官方 master
+    - cron: '30 4 * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout official tproxy-server master
+        run: |
+          git clone --depth 1 https://github.com/telegramdesktop/tproxy-server.git src
+          echo "SHORTSHA=$(git -C src rev-parse --short HEAD)" >> "$GITHUB_ENV"
+          echo "BUILD_DATE=$(date +%Y%m%d)" >> "$GITHUB_ENV"
+
+      - name: Setup Go (official pinned 1.26.5)
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.5'
+
+      - name: Run go test
+        run: (cd src && go test ./...)
+
+      - name: Build tproxy-server (linux/amd64)
+        run: |
+          (cd src && go build -trimpath -ldflags='-s -w' -o tproxy-server ./cmd/tproxy-server)
+          test -x tproxy-server
+
+      - name: Build MTProxy backend (official pinned commit)
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends build-essential libssl-dev zlib1g-dev
+          commit=f36d8af769ffaeac36978d38c2c0f6d1104c2137
+          checksum=919795c416b870670841a21d1930ad97a24c7b84b9eb8c6f9e3de32f2fdf4655
+          mkdir mtproxy-src
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 \
+            --output mtproxy.tar.gz "https://github.com/TelegramMessenger/MTProxy/archive/${commit}.tar.gz"
+          test "$(sha256sum mtproxy.tar.gz | awk '{print $1}')" = "$checksum"
+          tar --strip-components=1 -xzf mtproxy.tar.gz -C mtproxy-src
+          make -C mtproxy-src -j"$(nproc)"
+          test -x mtproxy-src/objs/bin/mtproto-proxy
+          cp mtproxy-src/objs/bin/mtproto-proxy mtproto-proxy
+
+      - name: Compute sha256 manifest
+        run: |
+          sha256sum tproxy-server mtproto-proxy > core.sha256
+          cat core.sha256
+
+      - name: Create core prerelease
+        run: |
+          tag="core-${BUILD_DATE}-${SHORTSHA}"
+          gh release create "$tag" \
+            --prerelease \
+            --title "$tag" \
+            --notes "Automated core build for telegramdesktop/tproxy-server master ${SHORTSHA} (build ${BUILD_DATE}).
+
+          Assets:
+          - tproxy-server (linux/amd64, go1.26.5, -trimpath -ldflags '-s -w')
+          - mtproto-proxy (linux/amd64, official pinned commit f36d8af7)
+          - core.sha256 (sha256 manifest; scripts verify before install)
+
+          Automatic daily build. Failed builds do not produce a release." \
+            tproxy-server mtproto-proxy core.sha256
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,5 +1,7 @@
 # 云龙TG
 
+[English](README_EN.md) | [简体中文](README.md)
+
 Telegram WEB 代理一键管理脚本。
 
 基于官方 [tproxy-server](https://github.com/telegramdesktop/tproxy-server)，不 fork、不改官方代码。一行命令装好，一行命令拿到 `t.me/webproxy` 链接，浏览器打开即用。

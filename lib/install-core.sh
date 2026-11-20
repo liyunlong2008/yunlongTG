@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # lib/install-core.sh — tg add 编排（design.md 第 5 节模式 A/B/C）
 # 原则：官方 install.sh 原样跑，我们不重造；我们的增量 = 检测 + 伪装站 + Caddyfile 接管 + 登记。
+# CADDY_* 变量由 core_install 主流程与 node_save 消费，shellcheck 单文件分析查不到
+# shellcheck disable=SC2034
 
 # 拉官方源码（add/update 都要）
 core_fetch_tproxy() {

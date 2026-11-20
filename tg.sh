@@ -4,10 +4,14 @@
 # 重编排（add/update/del/change）在 lib/*-core.sh。
 
 set -e
-cd "$(dirname "$0")" || exit 1
 
+# lib 寻址：按设计书落位写死（/usr/local/bin/tg + /usr/local/share/tg/lib）。
+# 本地源码树运行（未安装）时回退到脚本旁边的 lib/。
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LIB_DIR="$SCRIPT_DIR/lib"
+LIB_DIR="/usr/local/share/tg/lib"
+[ -d "$LIB_DIR" ] || LIB_DIR="$SCRIPT_DIR/lib"
+# 安装根随 LIB_DIR 对齐（VERSION 文件与 lib 同级）
+export TG_SHARE_DIR="${LIB_DIR%/lib}"
 
 # shellcheck source=lib/env.sh
 . "$LIB_DIR/env.sh"
@@ -137,13 +141,8 @@ cmd_status() {
 _cmd_service() {
   local action="$1"
   node_exists_check
-  local shared caddy_port_is443
-  shared=$(node_get caddy_shared)
-  # 模式 A/C 且端口 443：动 caddy；模式 B（自定义端口）只 reload 不 restart
-  local do_caddy="yes"
-  [ "$shared" = "false" ] && do_caddy="yes"   # A/B/C 都有官方/我们的 caddy
-  local services=(tproxy-server mtproxy)
-  [ "$do_caddy" = "yes" ] && services=("tproxy-server" "mtproxy" "caddy")
+  # 三种模式都装了 caddy（shared=true 表示共享既有 caddy），始终纳入服务清单
+  local services=("tproxy-server" "mtproxy" "caddy")
 
   local svc
   for svc in "${services[@]}"; do
@@ -400,8 +399,7 @@ main() {
     del)        cmd_del ;;
     uninstall)  cmd_uninstall ;;
     help|-h|--help) cmd_help ;;
-    version|--version|-v) echo "${BRAND} $(tg_version)" ;;
-    *) error_exit "未知命令: $cmd" "查看全部命令: tg help" ;;
+    version|--version|-v) echo "${BRAND} $(tg_version)" ;;    *) error_exit "未知命令: $cmd" "查看全部命令: tg help" ;;
   esac
 }
 

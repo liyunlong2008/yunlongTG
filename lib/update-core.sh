@@ -45,7 +45,7 @@ core_self_update() {
     warn "获取最新版本失败，跳过脚本更新"
     return 0
   fi
-  if [ "$latest" = "v$local_ver" ]; then
+  if [ "$latest" = "$local_ver" ]; then
     success "脚本已是最新版本: $local_ver"
     return 0
   fi
@@ -69,7 +69,7 @@ core_self_update() {
   cp -a "$tmp/lib/." "$TG_LIB_DIR/" 2>/dev/null || true
   cp -a "$tmp/tg.sh" "$TG_BIN"
   chmod +x "$TG_BIN"
-  echo "${latest#v}" > "$VERSION_FILE"
+  echo "$latest" > "$VERSION_FILE"
 
   rm -rf "$tmp"
   success "脚本更新完成: $latest"
@@ -78,5 +78,5 @@ core_self_update() {
 
 # 版本号写入（安装时）
 core_write_version() {
-  echo "${TG_VERSION:-dev}" > "$VERSION_FILE"
+  echo "${TG_VERSION:-v1.0.0}" > "$VERSION_FILE"
 }

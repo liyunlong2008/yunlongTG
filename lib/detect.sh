@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # lib/detect.sh — 系统/域名/端口/Caddy 端口冲突检测（design.md 第 5 节）
 # 所有函数单独可测；任一检测失败由调用方终止并给可操作提示。
+# DETECT_* 变量由调用方消费，shellcheck 单文件分析查不到
+# shellcheck disable=SC2034
 
 # 系统检测：Ubuntu 22+ / Debian 12+，x86_64，root
 detect_system() {
