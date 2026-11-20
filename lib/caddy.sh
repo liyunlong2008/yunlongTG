@@ -3,7 +3,7 @@
 # 红线：动 /etc/caddy/Caddyfile 必须先备份且可回滚；官方文件只读（Caddyfile 是被官方 install.sh
 # 整体覆盖的对象，我们只在官方跑完后接管）。
 
-CADDY_BACKUP_PREFIX="/etc/caddy/Caddyfile.before-tg"
+CADDY_BACKUP_PREFIX="${CADDY_BACKUP_PREFIX:-$(dirname "${CADDYFILE:-/etc/caddy/Caddyfile}")/Caddyfile.before-tg}"
 
 # 备份当前 Caddyfile，返回备份路径（stdout）
 caddy_backup() {
@@ -32,6 +32,10 @@ caddy_fragment_dir() { mkdir -p "$TG_CADDY_DIR"; chmod 755 "$TG_CADDY_DIR"; }
 caddy_render_site() {
   local host="$1" port="$2" base="$3"
   caddy_fragment_dir
+  # ACME 邮箱：add 时登记到 node.json，change 时由调用方先行更新
+  local acme_email
+  acme_email=$(node_get email)
+  [ -n "$acme_email" ] || acme_email="admin@$host"
   local site_addr
   if [ "$port" = "443" ]; then
     site_addr="$host"
@@ -41,7 +45,7 @@ caddy_render_site() {
   cat > "$TG_CADDY_DIR/site.conf" <<EOF
 # 由 ${BRAND} 管理，勿手工编辑；tg change 端口/域名会重写本文件
 $site_addr {
-	tls "$TG_ACME_EMAIL"
+	tls "$acme_email"
 	encode zstd gzip
 
 	handle_path /$base/* {

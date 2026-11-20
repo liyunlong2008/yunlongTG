@@ -13,6 +13,8 @@ BRAND="云龙TG"
 REPO_URL="https://github.com/liyunlong2008/yunlongTG"
 RAW_URL="https://raw.githubusercontent.com/liyunlong2008/yunlongTG/main"
 TPROXY_REPO_URL="https://github.com/telegramdesktop/tproxy-server"
+# core release 列表接口（design.md 7.2）：按 tag 前缀 core- 过滤取最新
+CORE_RELEASE_API="${CORE_RELEASE_API:-https://api.github.com/repos/liyunlong2008/yunlongTG/releases}"
 
 # 官方源码与脚本自更新落位（安装根 TG_SHARE_DIR 由 tg.sh 按落位导出，勿在此写死）
 TPROXY_SRC_DIR="${TPROXY_SRC_DIR:-/usr/local/src/tproxy-server}"
@@ -28,12 +30,19 @@ TG_CADDY_DIR="${TG_CADDY_DIR:-/etc/tg/caddy}"
 # 注意：tg.sh 在 source 本文件前已 export TG_SHARE_DIR，这里不覆盖已注入的值
 VERSION_FILE="${VERSION_FILE:-$TG_SHARE_DIR/VERSION}"
 
-# 官方路径（只读，红线：不写 /etc/tproxy-server、/etc/mtproxy 以外的官方文件）
-TPROXY_CONFIG="/etc/tproxy-server/config.json"
-TPROXY_PROFILES="/etc/tproxy-server/profiles.json"
-MPROXY_ENV="/etc/mtproxy/mtproxy.env"
-CADDYFILE="/etc/caddy/Caddyfile"
-CADDY_SERVICE="/etc/systemd/system/caddy.service"
+# 官方路径（默认值即官方文档化路径；${VAR:-default} 可注入便于测试）
+TPROXY_CONFIG="${TPROXY_CONFIG:-/etc/tproxy-server/config.json}"
+TPROXY_PROFILES="${TPROXY_PROFILES:-/etc/tproxy-server/profiles.json}"
+MPROXY_ENV="${MPROXY_ENV:-/etc/mtproxy/mtproxy.env}"
+CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
+CADDY_SERVICE="${CADDY_SERVICE:-/etc/systemd/system/caddy.service}"
+SYSTEMD_UNIT_DIR="${SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
 
 # 端口策略：443 空闲用 443；被占用时由用户输入端口，脚本不预设默认值
 DEFAULT_PORT=443
+
+# core 二进制下载校验落位（流水线路径，design.md 7.1/7.2）
+CORE_BIN="${CORE_BIN:-/usr/local/bin/tproxy-server}"
+CORE_LOCK="${CORE_LOCK:-/run/lock/tproxy-server-update.lock}"
+# 伪装站官方落位（官方 install.sh 186 行路径，官方默认 /srv/tproxy-site）
+TPROXY_SITE_ROOT="${TPROXY_SITE_ROOT:-/srv/tproxy-site}"
