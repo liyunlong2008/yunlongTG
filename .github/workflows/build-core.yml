@@ -60,7 +60,7 @@ jobs:
       - name: Create core prerelease
         run: |
           tag="core-${BUILD_DATE}-${SHORTSHA}"
-          gh release create "$tag" \
+          gh release create "$tag" -R liyunlong2008/yunlongTG \
             --prerelease \
             --title "$tag" \
             --notes "Automated core build for telegramdesktop/tproxy-server master ${SHORTSHA} (build ${BUILD_DATE}).
