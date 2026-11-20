@@ -110,10 +110,10 @@ caddy_validate() {
 caddy_apply() {
   caddy_validate || error_exit "Caddy 配置校验失败" "查看详情: caddy validate --config $CADDYFILE，修复后执行 systemctl reload caddy"
   if systemctl is-active --quiet caddy.service; then
-    # 跑着：reload 生效配置
-    systemctl reload caddy || error_exit "caddy reload 失败" "查看日志: journalctl -u caddy -n 50"
+    # 跑着：官方 caddy unit 无 ExecReload，reload 会 rc=3 —— 用 restart（毫秒级，代理通道可容忍）
+    systemctl restart caddy || error_exit "caddy 重启失败" "查看日志: journalctl -u caddy -n 50"
   else
-    # 首次安装（流水线路径我们自己装 Caddy，服务未跑过）：reload 必然 rc=3，走 start
+    # 首次安装（流水线路径我们自己装 Caddy，服务未跑过）：reload/restart rc=3 场景，走 start
     systemctl start caddy || error_exit "caddy 启动失败" "查看日志: journalctl -u caddy -n 50"
     systemctl is-active --quiet caddy.service \
       || error_exit "caddy 启动后仍未运行" "查看日志: journalctl -u caddy -n 50，修复后执行 systemctl start caddy"

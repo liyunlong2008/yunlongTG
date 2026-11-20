@@ -220,7 +220,11 @@ core_change_port() {
     caddy_restore_backup "$backup"
     error_exit "端口修改失败，已还原" "查看详情: caddy validate --config $CADDYFILE"
   fi
-  caddy_apply
+  # apply 失败同样还原（不留半改状态：Caddyfile 是旧端口、node.json 未动）
+  if ! caddy_apply; then
+    caddy_restore_backup "$backup"
+    error_exit "端口修改失败（caddy 生效失败），已还原" "查看日志: journalctl -u caddy -n 50，修复后重试 tg change port $newport"
+  fi
   node_save "port=$newport"
   success "端口已改为 $newport"
   info "节点链接已变化，重新分发用 tg url"
@@ -284,7 +288,14 @@ core_change_hostname() {
     jq --arg h "$oldhost" '.public_hostname = $h' "$TPROXY_CONFIG" > "$tmp" && mv "$tmp" "$TPROXY_CONFIG"
     error_exit "域名修改失败，已还原" "查看详情: caddy validate --config $CADDYFILE"
   fi
-  systemctl restart caddy tproxy-server
+  # apply 失败同样全量还原（Caddyfile + config.json，不留半改状态）
+  if ! caddy_apply; then
+    caddy_restore_backup "$backup"
+    jq --arg h "$oldhost" '.public_hostname = $h' "$TPROXY_CONFIG" > "$tmp" && mv "$tmp" "$TPROXY_CONFIG"
+    error_exit "域名修改失败（caddy 生效失败），已还原" "查看日志: journalctl -u caddy -n 50，修复后重试 tg change hostname $newhost"
+  fi
+  # 域名落进 config.json public_hostname，tproxy 需重启生效
+  systemctl restart tproxy-server || error_exit "tproxy-server 重启失败" "查看日志: journalctl -u tproxy-server -n 50"
   node_save "hostname=$newhost"
   success "域名已改为 $newhost"
   info "节点链接已变化，重新分发用 tg url"
