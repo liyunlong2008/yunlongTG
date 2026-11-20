@@ -236,19 +236,20 @@ core_change_secret() {
   new=$(gen_hex)
   info "正在生成新密码..."
   # 官方文档化路径（design.md 6：profiles.json secret 字段 + mtproxy.env）
+  # 真实结构 {"profiles":[{"secret":...}]}（Bug #9：顶层 .secret 是错位）
   local cur
-  cur=$(jq -r '.secret // empty' "$TPROXY_PROFILES" 2>/dev/null)
+  cur=$(jq -r '.profiles[0].secret // empty' "$TPROXY_PROFILES" 2>/dev/null)
   [ -n "$cur" ] || error_exit "读不到 profiles.json 的 secret 字段" "检查 $TPROXY_PROFILES 是否存在"
   local tmp; tmp=$(mktemp)
-  if jq --arg s "$new" '.secret = $s' "$TPROXY_PROFILES" > "$tmp"; then
+  if jq --arg s "$new" '.profiles[0].secret = $s' "$TPROXY_PROFILES" > "$tmp"; then
     mv "$tmp" "$TPROXY_PROFILES"
   else
     rm -f "$tmp"; error_exit "写 profiles.json 失败" "检查文件权限"
   fi
   chmod 400 "$TPROXY_PROFILES"
-  # mtproxy.env 里的 SECRET（官方命名，具体键名以官方文件为准）
-  if grep -q '^SECRET=' "$MPROXY_ENV" 2>/dev/null; then
-    sed -i "s/^SECRET=.*/SECRET=$new/" "$MPROXY_ENV"
+  # mtproxy.env 键名为官方 MTPROXY_SECRET=（Bug #9：旧代码 grep '^SECRET=' 错位）
+  if grep -q '^MTPROXY_SECRET=' "$MPROXY_ENV" 2>/dev/null; then
+    sed -i "s/^MTPROXY_SECRET=.*/MTPROXY_SECRET=$new/" "$MPROXY_ENV"
   fi
   systemctl restart tproxy-server mtproxy
   node_save "secret=$new"
