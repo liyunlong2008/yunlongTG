@@ -464,6 +464,14 @@ core_add() {
   # 参数补齐
   [ -n "$host" ] || error_exit "缺少 --hostname" "用法: tg add --hostname tg.example.com --email you@example.com"
   [ -n "$email" ] || error_exit "缺少 --email" "ACME 签证书需要邮箱，用法: tg add --email you@example.com"
+  # 轻校验：本地部分@含点域名.公网 TLD（2 位以上字母结尾），且非保留后缀
+  # （.local/.internal/.test/.invalid/.localhost/.home/.lan）。
+  # ACME 对无公网 TLD 邮箱（如 user@host.local）报 invalidContact 且不停重试，部署前拦下
+  local email_tld="${email##*.}"
+  if ! printf '%s' "$email" | grep -Eq '^[^@[:space:]]+@[^@[:space:]]+\.[A-Za-z]{2,}$' \
+    || printf '%s' "$email_tld" | grep -Eqix '(local|internal|test|invalid|localhost|home|lan)'; then
+    error_exit "邮箱格式不合格: $email" "邮箱需为真实公网域名邮箱，例: user@example.com"
+  fi
   [ -n "$secret" ] || secret=$(gen_hex)
   [ ${#secret} -ge 32 ] || error_exit "secret 必须 32 位 hex" "去掉 --secret 让脚本自动生成"
 
