@@ -97,6 +97,31 @@ tg update
 
 `tg del` 删节点，`tg uninstall` 删脚本本体。
 
+## 手动清理
+
+`tg` 命令本身坏了、跑不起来时，手动卸载。按顺序执行：
+
+```bash
+# 停服务
+systemctl disable --now tproxy-server mtproxy caddy 2>/dev/null
+
+# 删配置和程序
+rm -rf /etc/tproxy-server /etc/mtproxy /opt/MTProxy /usr/local/src/tproxy-server
+rm -f /etc/systemd/system/tproxy-server.service /etc/systemd/system/mtproxy.service
+rm -f /etc/systemd/system/refresh-mtproxy-config.service /etc/systemd/system/refresh-mtproxy-config.timer
+systemctl daemon-reload
+
+# 删 Caddy 里的节点配置（装之前有别的站点就手动挑着删）
+nano /etc/caddy/Caddyfile
+systemctl restart caddy 2>/dev/null
+
+# 删脚本本体
+rm -f /usr/local/bin/tg
+rm -rf /usr/local/share/tg
+```
+
+删完重装：重新跑一键安装命令即可。
+
 ## 说明
 
 - 仅支持 Ubuntu 22+ / Debian 12+，x86_64

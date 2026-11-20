@@ -97,6 +97,31 @@ Check status first: `tg status`. Then retry in an incognito window — your brow
 
 `tg del` removes the node, `tg uninstall` removes the script.
 
+## Manual cleanup
+
+If the `tg` command itself is broken, uninstall by hand. Run in order:
+
+```bash
+# Stop services
+systemctl disable --now tproxy-server mtproxy caddy 2>/dev/null
+
+# Remove config and binaries
+rm -rf /etc/tproxy-server /etc/mtproxy /opt/MTProxy /usr/local/src/tproxy-server
+rm -f /etc/systemd/system/tproxy-server.service /etc/systemd/system/mtproxy.service
+rm -f /etc/systemd/system/refresh-mtproxy-config.service /etc/systemd/system/refresh-mtproxy-config.timer
+systemctl daemon-reload
+
+# Remove the node config from Caddy (keep other sites if you had them)
+nano /etc/caddy/Caddyfile
+systemctl restart caddy 2>/dev/null
+
+# Remove the script itself
+rm -f /usr/local/bin/tg
+rm -rf /usr/local/share/tg
+```
+
+To reinstall, run the one-click install command again.
+
 ## Notes
 
 - Ubuntu 22+ / Debian 12+ on x86_64 only

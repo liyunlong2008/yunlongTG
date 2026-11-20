@@ -160,11 +160,11 @@ core_add() {
   local i
   for ((i = 0; i < ${#args[@]}; i++)); do
     case "${args[$i]}" in
-      --hostname) host="${args[$((i + 1))]}" ; ((i++)) ;;
-      --email) email="${args[$((i + 1))]}" ; ((i++)) ;;
-      --secret) secret="${args[$((i + 1))]}" ; ((i++)) ;;
-      --port) port="${args[$((i + 1))]}" ; ((i++)) ;;
-      --ip) explicit_ip="${args[$((i + 1))]}" ; ((i++)) ;;
+      --hostname) host="${args[$((i + 1))]}" ; i=$((i + 1)) ;;
+      --email) email="${args[$((i + 1))]}" ; i=$((i + 1)) ;;
+      --secret) secret="${args[$((i + 1))]}" ; i=$((i + 1)) ;;
+      --port) port="${args[$((i + 1))]}" ; i=$((i + 1)) ;;
+      --ip) explicit_ip="${args[$((i + 1))]}" ; i=$((i + 1)) ;;
       *) error_exit "未知参数: ${args[$i]}" "查看用法: tg add --help" ;;
     esac
   done
