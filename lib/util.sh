@@ -34,10 +34,13 @@ confirm() {
 # 依赖检查：缺则 apt 装，装不上报错
 require_cmds() {
   local missing=()
+  local cmd
   for cmd in "$@"; do
     command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
   done
-  [ ${#missing[@]} -eq 0 ] && return 0
+  if [ ${#missing[@]} -eq 0 ]; then
+    return 0
+  fi
   info "缺少依赖: ${missing[*]}，正在安装..."
   apt-get update -y >/dev/null 2>&1 || error_exit "apt-get update 失败" "检查网络后重试"
   for cmd in "${missing[@]}"; do
@@ -57,7 +60,13 @@ json_get() { jq -r "$1" "$NODE_JSON" 2>/dev/null; }
 json_set() {
   local updates="$1" tmp
   tmp=$(mktemp)
-  jq "$updates" "$NODE_JSON" > "$tmp" && mv "$tmp" "$NODE_JSON" && chmod 600 "$NODE_JSON"
+  if jq "$updates" "$NODE_JSON" > "$tmp"; then
+    mv "$tmp" "$NODE_JSON"
+    chmod 600 "$NODE_JSON"
+  else
+    rm -f "$tmp"
+    error_exit "写节点登记失败" "检查 $NODE_JSON 是否可写"
+  fi
 }
 
 # 节点是否已登记

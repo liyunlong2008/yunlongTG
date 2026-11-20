@@ -81,7 +81,9 @@ cmd_url() {
     server="$host"
     secret_field="$secret"
   fi
-  [ "$port" != "443" ] && server="$server:$port"
+  if [ "$port" != "443" ]; then
+    server="$server:$port"
+  fi
 
   echo "https://t.me/webproxy?server=$server&secret=$secret_field"
 }
@@ -97,7 +99,11 @@ cmd_qr() {
   # 可选 PNG：tg qr /path/to/out.png
   if [ -n "${1:-}" ]; then
     png="$1"
-    qrencode -o "$png" -s 8 "$url" && success "二维码已保存: $png"
+    if qrencode -o "$png" -s 8 "$url"; then
+      success "二维码已保存: $png"
+    else
+      error_exit "二维码写入失败: $png" "检查路径是否可写，重试 tg qr"
+    fi
   else
     qrencode -t ANSIUTF8I "$url"
     echo ""
@@ -170,7 +176,9 @@ cmd_log() {
     caddy) unit="caddy" ;;
     *) error_exit "未知日志源: $1" "可用: tg log [tproxy|mtproxy|caddy]" ;;
   esac
-  [ "${2:-}" = "-f" ] && follow="-f"
+  if [ "${2:-}" = "-f" ]; then
+    follow="-f"
+  fi
   journalctl -u "$unit" $follow -n 100 --no-pager
 }
 
@@ -228,9 +236,11 @@ core_change_secret() {
   cur=$(jq -r '.secret // empty' "$TPROXY_PROFILES" 2>/dev/null)
   [ -n "$cur" ] || error_exit "读不到 profiles.json 的 secret 字段" "检查 $TPROXY_PROFILES 是否存在"
   local tmp; tmp=$(mktemp)
-  jq --arg s "$new" '.secret = $s' "$TPROXY_PROFILES" > "$tmp" \
-    && mv "$tmp" "$TPROXY_PROFILES" \
-    || { rm -f "$tmp"; error_exit "写 profiles.json 失败" "检查文件权限"; }
+  if jq --arg s "$new" '.secret = $s' "$TPROXY_PROFILES" > "$tmp"; then
+    mv "$tmp" "$TPROXY_PROFILES"
+  else
+    rm -f "$tmp"; error_exit "写 profiles.json 失败" "检查文件权限"
+  fi
   chmod 400 "$TPROXY_PROFILES"
   # mtproxy.env 里的 SECRET（官方命名，具体键名以官方文件为准）
   if grep -q '^SECRET=' "$MPROXY_ENV" 2>/dev/null; then
@@ -256,9 +266,11 @@ core_change_hostname() {
 
   # config.json 只改 public_hostname 字段（design.md 6 允许的字段级改动）
   local tmp; tmp=$(mktemp)
-  jq --arg h "$newhost" '.public_hostname = $h' "$TPROXY_CONFIG" > "$tmp" \
-    && mv "$tmp" "$TPROXY_CONFIG" \
-    || { rm -f "$tmp"; error_exit "写 config.json 失败" "检查文件权限"; }
+  if jq --arg h "$newhost" '.public_hostname = $h' "$TPROXY_CONFIG" > "$tmp"; then
+    mv "$tmp" "$TPROXY_CONFIG"
+  else
+    rm -f "$tmp"; error_exit "写 config.json 失败" "检查文件权限"
+  fi
 
   caddy_render_site "$newhost" "$port" "$base"
   caddy_write_env_hostname "$newhost"
@@ -350,7 +362,12 @@ menu_loop() {
       1)
         if node_exists; then
           warn "已有节点"
-          confirm "强制重新添加？先删除现有节点" && cmd_del && cmd_add
+          if confirm "强制重新添加？先删除现有节点"; then
+            cmd_del
+            cmd_add
+          else
+            info "已取消"
+          fi
         else
           cmd_add
         fi
@@ -359,7 +376,7 @@ menu_loop() {
       3) cmd_url ;;
       4) cmd_qr ;;
       5) read -rp "新端口: " p; cmd_change port "$p" ;;
-      6) confirm "确认更换密码？旧链接全部作废" && cmd_change secret ;;
+      6) if confirm "确认更换密码？旧链接全部作废"; then cmd_change secret; else info "已取消"; fi ;;
       7) read -rp "新域名: " h; cmd_change hostname "$h" ;;
       8) cmd_status ;;
       9) cmd_start ;;
@@ -367,8 +384,8 @@ menu_loop() {
       11) cmd_restart ;;
       12) cmd_log tproxy -f ;;
       13) cmd_update ;;
-      14) confirm "确认删除节点？" && cmd_del ;;
-      15) confirm "确认卸载脚本？（不影响已装节点）" && cmd_uninstall ;;
+      14) if confirm "确认删除节点？"; then cmd_del; else info "已取消"; fi ;;
+      15) if confirm "确认卸载脚本？（不影响已装节点）"; then cmd_uninstall; else info "已取消"; fi ;;
       0) exit 0 ;;
       *) warn "无效选择" ;;
     esac

@@ -70,13 +70,19 @@ core_del() {
 }
 
 core_uninstall() {
+  # 空态行为与 del/info 一致：无登记即视为未安装
+  if ! node_exists; then
+    error_exit "本机未安装，无需卸载" "安装用一键安装命令，查看帮助用 tg help"
+  fi
   warn "即将卸载 ${BRAND} 脚本（不影响已装节点）"
   confirm "确认卸载？" || { info "已取消"; return 0; }
 
   # 若还有节点，提示先 del
-  if node_exists; then
-    warn "检测到仍有节点登记"
-    confirm "同时删除节点？" && core_del
+  warn "检测到仍有节点登记"
+  if confirm "同时删除节点？"; then
+    core_del
+  else
+    info "保留节点，仅卸载脚本"
   fi
 
   info "正在卸载脚本..."

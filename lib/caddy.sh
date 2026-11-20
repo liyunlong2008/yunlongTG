@@ -71,7 +71,12 @@ caddy_detach_fragment() {
   local import_line="import $TG_CADDY_DIR/*.conf"
   if grep -qF "$import_line" "$CADDYFILE"; then
     local tmp; tmp=$(mktemp)
-    grep -vF "$import_line" "$CADDYFILE" > "$tmp" && mv "$tmp" "$CADDYFILE"
+    if grep -vF "$import_line" "$CADDYFILE" > "$tmp"; then
+      mv "$tmp" "$CADDYFILE"
+    else
+      rm -f "$tmp"
+      error_exit "摘除节点配置失败" "手动检查 $CADDYFILE 中的 import 行"
+    fi
   fi
   rm -f "$TG_CADDY_DIR/site.conf"
 }

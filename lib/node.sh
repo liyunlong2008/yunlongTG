@@ -24,7 +24,13 @@ node_save() {
   done
   local tmp
   tmp=$(mktemp)
-  jq --argjson p "$pairs" '. * $p' "$NODE_JSON" > "$tmp" && mv "$tmp" "$NODE_JSON" && chmod 600 "$NODE_JSON"
+  if jq --argjson p "$pairs" '. * $p' "$NODE_JSON" > "$tmp"; then
+    mv "$tmp" "$NODE_JSON"
+    chmod 600 "$NODE_JSON"
+  else
+    rm -f "$tmp"
+    error_exit "写节点登记失败" "检查 $NODE_JSON 是否可写"
+  fi
 }
 
 # 删除节点登记（del 用）

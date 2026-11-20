@@ -97,7 +97,9 @@ detect_mode_b_ports() {
 
 # 重入检测：官方配置已存在 → 拒绝 add
 detect_reinstall() {
-  [ -f "$TPROXY_CONFIG" ] && error_exit "本机已安装 tproxy" "查看状态用 tg status，改配置用 tg change，重装先 tg del"
+  if [ -f "$TPROXY_CONFIG" ]; then
+    error_exit "本机已安装 tproxy" "查看状态用 tg status，改配置用 tg change，重装先 tg del"
+  fi
 }
 
 # 汇总打印（add 前给用户看一眼）
