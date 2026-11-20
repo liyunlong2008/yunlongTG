@@ -34,8 +34,8 @@ else
 fi
 info "系统检测通过: $PRETTY_NAME x86_64"
 
-# 2. 已装 tg → 提示直接用
-if [ -x "$TG_BIN" ]; then
+# 2. 已装 tg 且完整（主入口 + lib 可读）→ 提示直接用；lib 缺失视为安装损坏，放行重装
+if [ -x "$TG_BIN" ] && [ -r "$TG_SHARE_DIR/lib/env.sh" ]; then
   info "检测到已安装 tg 命令"
   info "请使用 tg 命令进行管理"
   exit 0

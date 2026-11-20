@@ -8,9 +8,11 @@ YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
 PLAIN='\033[0m'
 
-info() { echo -e "${BLUE}信息${PLAIN}: $1"; }
-success() { echo -e "${GREEN}成功${PLAIN}: $1"; }
-warn() { echo -e "${YELLOW}注意${PLAIN}: $1"; }
+# 日志一律打 stderr：stdout 只走函数返回值与用户面输出，
+# 被 $(...) 捕获的函数（如 core_fetch_binaries）不会混入日志（Bug #5）
+info() { echo -e "${BLUE}信息${PLAIN}: $1" >&2; }
+success() { echo -e "${GREEN}成功${PLAIN}: $1" >&2; }
+warn() { echo -e "${YELLOW}注意${PLAIN}: $1" >&2; }
 error() { echo -e "${RED}错误${PLAIN}: $1" >&2; }
 # 报错必须给下一步动作：error_exit "原因" "下一步动作"
 error_exit() {

@@ -47,7 +47,12 @@ core_fetch_binaries() {
   rel=$(core_latest_release)
   local tag
   tag="${rel%%|*}"
-  info "拉取核心产物: $tag"
+  # 分支提示打 stderr（本函数返回值走 stdout，日志不得混入，Bug #5）
+  if [ -n "$tag" ]; then
+    info "拉取核心产物: $tag" >&2
+  else
+    info "无已登记版本，直接拉取最新核心产物" >&2
+  fi
   dir=$(mktemp -d)
   local tproxy_url mtproxy_url sha_url
   IFS='|' read -r _ tproxy_url mtproxy_url sha_url <<< "$rel"
