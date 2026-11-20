@@ -34,7 +34,8 @@ jobs:
       - name: Build tproxy-server (linux/amd64)
         run: |
           (cd src && go build -trimpath -ldflags='-s -w' -o tproxy-server ./cmd/tproxy-server)
-          test -x tproxy-server
+          test -x src/tproxy-server
+          cp src/tproxy-server tproxy-server
 
       - name: Build MTProxy backend (official pinned commit)
         run: |
