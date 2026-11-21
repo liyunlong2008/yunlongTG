@@ -23,7 +23,9 @@ caddy_file_has_tg_marks() {
   [ -f "$f" ] || return 1
   if grep -qF "import $TG_CADDY_DIR/*.conf" "$f"; then return 0; fi
   if grep -qF "# 由 ${BRAND} 管理" "$f"; then return 0; fi
-  if grep -qF "reverse_proxy 127.0.0.1:8080" "$f" && grep -q 'handle_path /' "$f"; then return 0; fi
+  # 兼容新旧：新渲染用 handle /<base>，旧版本用 handle_path /<base>，都算 tg 痕迹
+  if grep -qF "reverse_proxy 127.0.0.1:8080" "$f" \
+    && { grep -qF 'handle /' "$f" || grep -qF 'handle_path /' "$f"; }; then return 0; fi
   return 1
 }
 
@@ -105,10 +107,12 @@ $site_addr {
 	tls "$acme_email"
 	encode zstd gzip
 
-	handle_path /$base/* {
+	# 官方 BASE_PATH.md：relay 转发原始路径、含前缀、从不剥离；
+	# 故用 handle 保留前缀，否则桥接 capability 校验会因路径不符而失败
+	handle /$base/* {
 		reverse_proxy 127.0.0.1:8080
 	}
-	handle_path /$base {
+	handle /$base {
 		reverse_proxy 127.0.0.1:8080
 	}
 
