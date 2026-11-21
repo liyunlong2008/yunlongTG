@@ -116,8 +116,10 @@ $site_addr {
 		reverse_proxy 127.0.0.1:8080
 	}
 
+	# 兜底交给 relay 分流：servePublic 对 / 返回伪装站首页 200、其余查静态文件；
+	# 旧 redir 会对根路径重定向到自己形成循环，且拦截伪装站首页
 	handle {
-		redir https://{host}{uri} 302
+		reverse_proxy 127.0.0.1:8080
 	}
 }
 EOF
