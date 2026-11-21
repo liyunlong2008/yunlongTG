@@ -4,7 +4,7 @@
 
 One-click management script for a Telegram WEB proxy.
 
-Built on the official [tproxy-server](https://github.com/telegramdesktop/tproxy-server). No fork, no patches to the official code. One command to install, one command to get your `t.me/webproxy` link — open it in a browser and go.
+Built on the official [tproxy-server](https://github.com/telegramdesktop/tproxy-server). No fork, no patches to the official code. One command to install, one command to get your `t.me/webproxy` link — open the link in Telegram and tap Connect to add the proxy.
 
 ## Install
 
