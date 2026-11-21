@@ -15,11 +15,55 @@ caddy_backup() {
   echo "$backup"
 }
 
-# 从备份恢复 Caddyfile（模式 C 失败回滚用）
+# 备份是否含 tg 自己生成的痕迹（旧 site block / import 行）。
+# 多次 del/add 后备份链越攒越多，最新一份可能是上一轮 tg 时代的旧配置，
+# 盲恢复会把旧端口 site block 带回主 Caddyfile（Bug #10）。
+caddy_file_has_tg_marks() {
+  local f="$1"
+  [ -f "$f" ] || return 1
+  if grep -qF "import $TG_CADDY_DIR/*.conf" "$f"; then return 0; fi
+  if grep -qF "# 由 ${BRAND} 管理" "$f"; then return 0; fi
+  if grep -qF "reverse_proxy 127.0.0.1:8080" "$f" && grep -q 'handle_path /' "$f"; then return 0; fi
+  return 1
+}
+
+# 从 before-tproxy 备份里挑最新的一份「不含 tg 痕迹」的原始快照。
+# 输出路径到 stdout；无干净备份则输出空（调用方保留当前 Caddyfile）。
+caddy_pick_clean_backup() {
+  local dir b
+  dir=$(dirname "$CADDYFILE")
+  while IFS= read -r b; do
+    [ -n "$b" ] || continue
+    if ! caddy_file_has_tg_marks "$b"; then
+      printf '%s\n' "$b"
+      return 0
+    fi
+  done < <(find "$dir" -maxdepth 1 -name 'Caddyfile.before-tproxy.*' -type f 2>/dev/null | sort -r)
+  return 0
+}
+
+# 清掉含 tg 痕迹的旧备份（含 before-tproxy 与 before-tg 两类），避免备份链越攒越多
+caddy_purge_tainted_backups() {
+  local dir b prefix
+  dir=$(dirname "$CADDYFILE")
+  prefix="${CADDY_BACKUP_PREFIX##*/}"
+  while IFS= read -r b; do
+    [ -n "$b" ] || continue
+    if caddy_file_has_tg_marks "$b"; then
+      rm -f "$b"
+    fi
+  done < <(find "$dir" -maxdepth 1 \( -name 'Caddyfile.before-tproxy.*' -o -name "$prefix.*" \) -type f 2>/dev/null)
+  return 0
+}
+
+# 从备份恢复 Caddyfile（仅接受不含 tg 痕迹的干净备份）
 caddy_restore_backup() {
   local backup="$1"
   if [ -z "$backup" ] || [ ! -f "$backup" ]; then
     error_exit "备份文件不存在: $backup" "检查 $CADDY_BACKUP_PREFIX.* 是否存在"
+  fi
+  if caddy_file_has_tg_marks "$backup"; then
+    error_exit "备份含旧配置痕迹，拒绝恢复: $backup" "保留当前 Caddyfile，检查 $CADDY_BACKUP_PREFIX.* 后手工处理"
   fi
   cp -a "$backup" "$CADDYFILE"
 }

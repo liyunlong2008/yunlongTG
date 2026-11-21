@@ -56,8 +56,9 @@ core_del() {
 
   # 2. Caddy 处理：按模式还原或摘除
   if [ "$shared" = "true" ]; then
-    # C 模式：还原我们的 before-tg 备份（如果还原后能 validate），否则只摘 site block
-    if [ -n "$backup" ] && [ -f "$backup" ]; then
+    # C 模式：还原我们的 before-tg 备份（仅当它是干净的用户原始配置）
+    # 备份若含 tg 痕迹（旧 site block/import 行），说明是上一轮 tg 旧物，整份恢复会带回旧端口 block
+    if [ -n "$backup" ] && [ -f "$backup" ] && ! caddy_file_has_tg_marks "$backup"; then
       info "正在还原原 Caddyfile..."
       cp -a "$backup" "$CADDYFILE"
       if caddy_validate; then
@@ -66,8 +67,9 @@ core_del() {
         warn "还原后 validate 未过，请手工检查 $CADDYFILE"
       fi
     else
+      # 无干净备份或备份已含 tg 痕迹：只摘我们的 site block，不整份恢复
       caddy_detach_fragment
-      systemctl reload caddy 2>/dev/null || true
+      caddy_validate >/dev/null 2>&1 && systemctl reload caddy 2>/dev/null || true
     fi
   else
     # A/B 模式：Caddy 是我们装的，直接摘除

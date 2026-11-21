@@ -350,15 +350,19 @@ core_install_mode_c() {
   core_install_caddy_config "$host" "$email"
   core_install_units
 
-  # 官方部署段跑完，恢复官方的 before-tproxy 备份（恢复原 Caddyfile）
+  # 官方部署段跑完，恢复官方的 before-tproxy 备份（原始 Caddyfile）。
+  # 只认「不含 tg 痕迹」的干净快照：最新一份可能是上一轮 tg 时代的旧 site block，
+  # 盲恢复会把旧端口 block 带回主 Caddyfile（Bug #10）。
   local official_backup
-  official_backup=$(find "$(dirname "$CADDYFILE")" -maxdepth 1 -name 'Caddyfile.before-tproxy.*' -type f 2>/dev/null | sort -r | head -1)
+  official_backup=$(caddy_pick_clean_backup)
   if [ -n "$official_backup" ]; then
     cp -a "$official_backup" "$CADDYFILE"
-    info "已恢复原 Caddyfile（安装前备份）"
+    info "已恢复安装前备份（原始 Caddyfile）"
   else
-    warn "无安装前备份，保留当前 Caddyfile"
+    info "无原始配置备份，保留当前 Caddyfile"
   fi
+  # 清掉含 tg 痕迹的旧备份，避免备份链越攒越多
+  caddy_purge_tainted_backups
 
   # 追加我们的 site block
   caddy_render_site "$host" "$port" "$(core_official_get '.base_path // ""')" "$email"
