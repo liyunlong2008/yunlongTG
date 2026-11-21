@@ -22,14 +22,14 @@ tg add --hostname tg.example.com --email you@example.com
 
 - 域名先解析到服务器 IP，A 记录不对装不了
 - 邮箱用于申请 HTTPS 证书
-- 443 端口被其他服务占用时，会要求你输入一个端口来使用，客户端链接自带端口号，原有服务不受影响
+- WEB 代理类型固定使用 443 端口，安装前需确保 443 空闲
 
 ## 功能
 
 - 一键添加节点，自动生成每台机器不同的伪装站
-- 自动检测端口占用，443 空闲用 443，被占要求你输入端口，不预设默认值
+- 自动检测端口占用，443 被占用时明确报错并提示释放，不支持换端口
 - 节点链接 + 终端二维码，手机扫码直达
-- 改端口、改密码、改域名，一条命令
+- 改密码、改域名，一条命令
 - 更新走 GitHub release，失败自动回退
 - 卸载干净，不留垃圾
 
@@ -42,7 +42,6 @@ tg add --hostname tg.example.com --email you@example.com
 | `tg info` | 查看节点信息 |
 | `tg url` | 显示节点链接 |
 | `tg qr` | 显示二维码，`tg qr /root/qr.png` 存成图片 |
-| `tg change port 9443` | 改端口 |
 | `tg change secret` | 改密码，旧链接全部作废 |
 | `tg change hostname tg2.example.com` | 改域名 |
 | `tg status` | 查看服务状态 |
@@ -58,7 +57,7 @@ tg add --hostname tg.example.com --email you@example.com
 
 同一台 VPS 可以和平共存：
 
-- 443 被其他服务占用时，云龙TG 要求你输入端口使用 + 独立子域名
+- 443 需空闲；被占用时云龙TG 报错并提示先释放，不影响原有服务
 - 不碰已有服务的任何配置，卸载云龙TG 后原有服务原样可用
 - 本机已有 Caddy 时自动共用，不会重装冲突
 
@@ -81,9 +80,6 @@ tg update
 
 证书申请需要 80 端口，先释放再装。
 
-**想用的端口被占用？**
-
-换一个：`tg add --port 9443`。
 
 **装完链接打不开？**
 

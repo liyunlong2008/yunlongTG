@@ -40,11 +40,12 @@ CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
 CADDY_SERVICE="${CADDY_SERVICE:-/etc/systemd/system/caddy.service}"
 SYSTEMD_UNIT_DIR="${SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
 
-# 端口策略：443 空闲用 443；被占用时由用户输入端口，脚本不预设默认值
+# 端口策略：WEB 代理类型固定 HTTPS + 443（协议规定），不支持修改端口
 DEFAULT_PORT=443
 
 # core 二进制下载校验落位（流水线路径，design.md 7.1/7.2）
 CORE_BIN="${CORE_BIN:-/usr/local/bin/tproxy-server}"
+CADDY_BIN="${CADDY_BIN:-/usr/local/bin/caddy}"
 CORE_LOCK="${CORE_LOCK:-/run/lock/tproxy-server-update.lock}"
 # 伪装站官方落位（官方 install.sh 186 行路径，官方默认 /srv/tproxy-site）
 TPROXY_SITE_ROOT="${TPROXY_SITE_ROOT:-/srv/tproxy-site}"

@@ -132,7 +132,7 @@ core_install_caddy() {
     error_exit "Caddy sha512 校验不通过" "重试 tg add；持续失败联系维护者"
   fi
   tar -C "$directory" -xzf "$archive"
-  install -m 0755 "$directory/caddy" /usr/local/bin/caddy
+  install -m 0755 "$directory/caddy" "$CADDY_BIN"
   rm -f "$archive"
   rm -rf "$directory"
   if ! id caddy >/dev/null 2>&1; then
@@ -285,7 +285,7 @@ core_start_services() {
   "$CORE_BIN" -config "$TPROXY_CONFIG" -profiles-file "$TPROXY_PROFILES" -check \
     || error_exit "核心配置校验未通过" "查看: $CORE_BIN -config $TPROXY_CONFIG -check，修复后重试 tg add"
   TPROXY_HOSTNAME="$host" TPROXY_SITE_ROOT="$TPROXY_SITE_ROOT" ACME_EMAIL="$email" \
-    /usr/local/bin/caddy validate --config "$CADDYFILE" --adapter caddyfile >/dev/null 2>&1 \
+    "$CADDY_BIN" validate --config "$CADDYFILE" --adapter caddyfile >/dev/null 2>&1 \
     || error_exit "Caddy 配置校验未通过" "查看: caddy validate --config $CADDYFILE，修复后重试 tg add"
   systemctl daemon-reload
   systemctl enable --now tproxy-firewall.service >/dev/null 2>&1 || true
@@ -323,53 +323,6 @@ core_install_mode_a() {
   core_wait_ready 20 || error_exit "tproxy 未就绪" "查看日志: journalctl -u tproxy-server -n 50"
   CADDY_BACKUP=""
   CADDY_SHARED="false"
-}
-
-# ============================================================
-# 模式 B：443 被其他 TLS 服务占用、本机无 caddy
-# 太白金星拍板：官方逻辑下 Caddyfile 占 443 会启动失败，视为预期：
-# 部署段跑完核心就位硬校验 → 重写 Caddyfile 为用户指定端口 → validate → restart → healthz
-# ============================================================
-core_install_mode_b() {
-  local host="$1" email="$2" secret="$3" sitedir="$4" port="$5" bindir="$6"
-  info "443 端口被占用，安装后自动改用端口 $port"
-  core_apt_deps
-  core_install_caddy
-  core_install_mtproxy "$bindir"
-  core_user_tproxy
-  core_install_relay_binary "$bindir"
-  install -d -o root -g root -m 0755 "$TPROXY_SITE_ROOT"
-  if [ ! -e "$TPROXY_SITE_ROOT/index.html" ]; then
-    cp -a "$sitedir/." "$TPROXY_SITE_ROOT/"
-    chown -R root:root "$TPROXY_SITE_ROOT"
-  fi
-  local public_source='  "public_dir": "'"$TPROXY_SITE_ROOT"'",'
-  core_write_config "$host" "$(core_gen_base_path)" "$secret" "$public_source"
-  core_write_mtproxy_env "$secret" "$host"
-  core_install_caddy_config "$host" "$email"
-  core_install_units
-  # 此刻 caddy restart 会因 443 冲突失败（官方语义），跳过整体启动段
-  "$CORE_BIN" -config "$TPROXY_CONFIG" -profiles-file "$TPROXY_PROFILES" -check \
-    || error_exit "核心配置校验未通过" "查看: $CORE_BIN -config $TPROXY_CONFIG -check，修复后重试 tg add"
-  systemctl daemon-reload
-  systemctl enable --now tproxy-firewall.service >/dev/null 2>&1 || true
-  systemctl enable --now mtproxy.service >/dev/null 2>&1 || true
-  systemctl restart mtproxy.service || true
-  systemctl enable --now tproxy-server.service >/dev/null 2>&1 || true
-  systemctl enable --now refresh-mtproxy-config.timer >/dev/null 2>&1 || true
-  # 核心就位硬校验
-  [ -f "$TPROXY_CONFIG" ] || error_exit "官方配置缺失" "查看日志后重试"
-
-  # 接管 Caddyfile：重写为用户指定端口的 site block
-  local backup
-  backup=$(caddy_backup)
-  caddy_render_site "$host" "$port" "$(core_official_get '.base_path // ""')" "$email"
-  cp "$TG_CADDY_DIR/site.conf" "$CADDYFILE"
-  caddy_apply
-  core_wait_ready 20 || error_exit "tproxy 未就绪" "查看日志: journalctl -u tproxy-server -n 50"
-  CADDY_BACKUP="$backup"
-  CADDY_SHARED="false"
-  CADDY_PORT_OVERRIDDEN="true"
 }
 
 # ============================================================
@@ -444,7 +397,7 @@ core_wait_ready() {
 # tg add 主入口
 # ============================================================
 core_add() {
-  local host="" email="" secret="" port="" explicit_ip=""
+  local host="" email="" secret="" explicit_ip=""
   local args=("$@")
   local i
   for ((i = 0; i < ${#args[@]}; i++)); do
@@ -452,7 +405,6 @@ core_add() {
       --hostname) host="${args[$((i + 1))]}" ; i=$((i + 1)) ;;
       --email) email="${args[$((i + 1))]}" ; i=$((i + 1)) ;;
       --secret) secret="${args[$((i + 1))]}" ; i=$((i + 1)) ;;
-      --port) port="${args[$((i + 1))]}" ; i=$((i + 1)) ;;
       --ip) explicit_ip="${args[$((i + 1))]}" ; i=$((i + 1)) ;;
       *) error_exit "未知参数: ${args[$i]}" "查看用法: tg add --help" ;;
     esac
@@ -477,25 +429,12 @@ core_add() {
 
   detect_dns "$host" "$explicit_ip"
   decide_mode
+  detect_acme_port   # 80 必须空闲（ACME HTTP-01）
+  local port="$DEFAULT_PORT"   # WEB 代理类型固定 443
 
   case "$DETECT_MODE" in
-    A) info "模式 A：443 空闲，全新安装" ;;
-    B)
-      # 443 被占用：必须由用户指定端口，不预设默认值
-      if [ -z "$port" ]; then
-        info "443 端口被占用（占用者: $DETECT_443_NAME）"
-        while [ -z "$port" ]; do
-          read -rp "请输入 WEB 代理使用的端口: " port
-          [ -n "$port" ] || info "端口不能为空，请输入"
-        done
-      fi
-      detect_mode_b_ports "$port"
-      info "模式 B：443 被占用（$DETECT_443_NAME），改用端口 $port"
-      ;;
-    C)
-      [ -n "$port" ] || port=$DEFAULT_PORT
-      info "模式 C：共用本机 Caddy，端口 $port"
-      ;;
+    A) info "模式 A：443 空闲，全新安装（WEB 代理固定 443）" ;;
+    C) info "模式 C：共用本机 Caddy，443 端口" ;;
   esac
 
   # 拉官方源码树（部署段复用官方 deploy/ 原文件，Bug #4 根修）
@@ -512,10 +451,9 @@ core_add() {
   core_tag=$(core_latest_release | cut -d'|' -f1)
 
   # 分模式安装
-  CADDY_BACKUP=""; CADDY_SHARED="false"; CADDY_PORT_OVERRIDDEN="false"
+  CADDY_BACKUP=""; CADDY_SHARED="false"
   case "$DETECT_MODE" in
     A) core_install_mode_a "$host" "$email" "$secret" "$sitedir" "$bindir" ;;
-    B) core_install_mode_b "$host" "$email" "$secret" "$sitedir" "$port" "$bindir" ;;
     C) core_install_mode_c "$host" "$email" "$secret" "$sitedir" "$port" "$bindir" ;;
   esac
   rm -rf "$bindir"

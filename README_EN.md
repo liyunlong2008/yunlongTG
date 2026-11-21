@@ -22,14 +22,14 @@ tg add --hostname tg.example.com --email you@example.com
 
 - Point the domain to your server first. A wrong A record blocks installation.
 - The email is used to issue the HTTPS certificate.
-- If port 443 is taken by another service, the script asks you for a port to use. Client links carry the port number, and the existing service stays untouched.
+- WEB proxy type fixes HTTPS and port 443; free port 443 before install
 
 ## Features
 
 - One command to add a node, with a decoy site generated uniquely per machine
-- Automatic port detection: free 443 gets used, taken 443 prompts you for a port, no hardcoded default
+- Automatic port detection: taken 443 fails with a clear message, no port switching
 - Node link plus a terminal QR code — scan with your phone and go
-- Change port, secret, or hostname with a single command
+- Change secret or hostname with a single command
 - Updates shipped via GitHub releases, with automatic rollback on failure
 - Clean uninstall, nothing left behind
 
@@ -42,7 +42,6 @@ tg add --hostname tg.example.com --email you@example.com
 | `tg info` | Show node information |
 | `tg url` | Show the node link |
 | `tg qr` | Show a QR code; `tg qr /root/qr.png` saves it as an image |
-| `tg change port 9443` | Change the port |
 | `tg change secret` | Change the secret; all old links become invalid |
 | `tg change hostname tg2.example.com` | Change the hostname |
 | `tg status` | Show service status |
@@ -58,7 +57,7 @@ tg add --hostname tg.example.com --email you@example.com
 
 Multiple services can live on the same VPS in peace:
 
-- When port 443 is taken by another service, YunlongTG asks you for a port plus a dedicated subdomain
+- Port 443 must be free; if taken, YunlongTG fails with a message and leaves the existing service untouched
 - It never touches the existing service's configuration. Uninstall YunlongTG and the original service works exactly as before
 - If the machine already runs Caddy, it is shared automatically, no reinstall conflict
 
@@ -81,9 +80,6 @@ Check that the A record points to your server's public IP, then run `tg add` aga
 
 Certificate issuance needs port 80. Free it first, then install.
 
-**The port I want is taken?**
-
-Pick another one: `tg add --port 9443`.
 
 **The link does not open after install?**
 

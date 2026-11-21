@@ -67,22 +67,19 @@ cmd_info() {
 # ============================================================
 cmd_url() {
   node_exists_check
-  local host base secret port server secret_field
+  local host base secret server secret_field
   host=$(node_get hostname)
   base=$(node_get base_path)
   secret=$(node_get secret)
-  port=$(node_get port)
 
+  # WEB 代理类型固定 HTTPS + 443：server 不含端口，斜杠用 %2F 编码
   if [ -n "$base" ] && [ "$base" != "none" ]; then
-    server="$host/$base"
+    server="$host%2F$base"
     # base64url(0x70 + hex secret)
     secret_field=$(printf '70%s' "$secret" | xxd -r -p | base64 | tr '+/' '-_' | tr -d '=')
   else
     server="$host"
     secret_field="$secret"
-  fi
-  if [ "$port" != "443" ]; then
-    server="$server:$port"
   fi
 
   echo "https://t.me/webproxy?server=$server&secret=$secret_field"
@@ -193,41 +190,14 @@ cmd_change() {
     port)   core_change_port "$@" ;;
     secret) core_change_secret ;;
     hostname) core_change_hostname "$@" ;;
-    *) error_exit "未知子命令: tg change $sub" "可用: tg change port|secret|hostname" ;;
+    *) error_exit "未知子命令: tg change $sub" "可用: tg change secret|hostname（端口固定 443 不支持修改）" ;;
   esac
 }
 
-# 改端口：重写 site block → validate → reload → node.json
+# 改端口：WEB 代理类型固定 HTTPS + 443，端口不可改（保留命令以给出明确指引）
 core_change_port() {
-  local newport="$1"
-  [ -n "$newport" ] || error_exit "缺少端口号" "用法: tg change port <端口>"
-  [[ "$newport" =~ ^[0-9]+$ ]] && [ "$newport" -ge 1 ] && [ "$newport" -le 65535 ] \
-    || error_exit "端口号不合法: $newport" "1-65535 之间的数字"
-  [ "$newport" != "443" ] || { detect_ports; [ "$DETECT_443" = "caddy" ] || warn "443 端口需确认归属，若被其他服务占用会导致 Caddy 启动失败"; }
-
-  local host base backup
-  host=$(node_get hostname)
-  base=$(node_get base_path)
-  backup=$(caddy_backup)
-
-  caddy_render_site "$host" "$newport" "$base"
-  if [ "$(node_get caddy_shared)" = "true" ]; then
-    caddy_attach_fragment
-  else
-    cp "$TG_CADDY_DIR/site.conf" "$CADDYFILE"
-  fi
-  if ! caddy_validate; then
-    caddy_restore_backup "$backup"
-    error_exit "端口修改失败，已还原" "查看详情: caddy validate --config $CADDYFILE"
-  fi
-  # apply 失败同样还原（不留半改状态：Caddyfile 是旧端口、node.json 未动）
-  if ! caddy_apply; then
-    caddy_restore_backup "$backup"
-    error_exit "端口修改失败（caddy 生效失败），已还原" "查看日志: journalctl -u caddy -n 50，修复后重试 tg change port $newport"
-  fi
-  node_save "port=$newport"
-  success "端口已改为 $newport"
-  info "节点链接已变化，重新分发用 tg url"
+  error_exit "WEB 代理固定使用 443 端口，不支持修改端口" \
+    "如需更换入口请重新部署：tg del 后用一键安装命令重装"
 }
 
 # 改密码：新 32 hex → 改 profiles.json secret 字段 + mtproxy.env → restart
@@ -321,7 +291,7 @@ cmd_help() {
   echo "  info              查看节点信息"
   echo "  url               显示节点链接"
   echo "  qr                显示二维码（tg qr <file.png> 可存图）"
-  echo "  change            修改端口/密码/域名（tg change port|secret|hostname）"
+  echo "  change            修改密码/域名（tg change secret|hostname）"
   echo "  status            服务状态"
   echo "  start             启动服务"
   echo "  stop              停止服务"
@@ -345,7 +315,7 @@ show_menu() {
     echo " 2. 查看节点信息      tg info"
     echo " 3. 显示节点链接      tg url"
     echo " 4. 显示二维码        tg qr"
-    echo " 5. 修改端口          tg change port"
+    echo " 5. 端口说明          WEB 代理固定 443"
     echo " 6. 修改密码          tg change secret"
     echo " 7. 修改域名          tg change hostname"
     echo " 8. 查看服务状态      tg status"
@@ -387,7 +357,7 @@ menu_loop() {
       2) cmd_info ;;
       3) cmd_url ;;
       4) cmd_qr ;;
-      5) read -rp "新端口: " p; cmd_change port "$p" ;;
+      5) info "WEB 代理固定使用 443 端口，不支持修改端口" ;;
       6) if confirm "确认更换密码？旧链接全部作废"; then cmd_change secret; else info "已取消"; fi ;;
       7) read -rp "新域名: " h; cmd_change hostname "$h" ;;
       8) cmd_status ;;

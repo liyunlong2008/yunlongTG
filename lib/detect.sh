@@ -69,30 +69,31 @@ detect_ports() {
   return 0
 }
 
-# 模式判定：输出 DETECT_MODE（A/B/C）
+# 模式判定：输出 DETECT_MODE（A/C）
+# WEB 代理类型固定 443：443 被非 caddy 服务占用直接报错，不再提供换端口模式
 decide_mode() {
   detect_ports
   case "$DETECT_443" in
     free)
       if [ "$DETECT_HAS_CADDY" = "yes" ]; then
-        DETECT_MODE="C"   # 本机已有 caddy（未占 443）：共用，443 仍可用
+        DETECT_MODE="C"   # 本机已有 caddy：共用，443 仍可用
       else
         DETECT_MODE="A"
       fi
       ;;
     caddy)  DETECT_MODE="C" ;;
-    other)  DETECT_MODE="B" ;;
+    other)
+      error_exit "443 端口被占用，WEB 代理必须使用 443，请先释放 443" \
+        "查看占用者: ss -tlnp 'sport = :443'；释放后重试 tg add"
+      ;;
   esac
 }
 
-# 模式 B 前置：80 必须空闲（ACME 回落 HTTP-01），目标端口必须空闲
-detect_mode_b_ports() {
-  local want_port="${1:?目标端口不能为空}"
-  local l80 lport
+# ACME HTTP-01 前置：80 必须空闲（443 已由 decide_mode 保证）
+detect_acme_port() {
+  local l80
   l80=$(ss -tlnp 'sport = :80' 2>/dev/null | tail -n +2)
-  [ -z "$l80" ] || error_exit "80 端口被占用" "Caddy 需要走 80 做 HTTP-01 签证书，先释放 80，或改用 DNS 验证（需联系作者）"
-  lport=$(ss -tlnp "sport = :$want_port" 2>/dev/null | tail -n +2)
-  [ -z "$lport" ] || error_exit "$want_port 端口被占用" "换一个端口: tg add --port <端口>"
+  [ -z "$l80" ] || error_exit "80 端口被占用" "Caddy 需要走 80 做 HTTP-01 签证书，先释放 80"
 }
 
 # 重入检测：官方配置已存在 → 拒绝 add

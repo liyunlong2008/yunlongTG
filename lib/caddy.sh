@@ -46,7 +46,7 @@ caddy_render_site() {
     site_addr="$host:$port"
   fi
   cat > "$TG_CADDY_DIR/site.conf" <<EOF
-# 由 ${BRAND} 管理，勿手工编辑；tg change 端口/域名会重写本文件
+# 由 ${BRAND} 管理，勿手工编辑；tg change 域名会重写本文件
 $site_addr {
 	tls "$acme_email"
 	encode zstd gzip
