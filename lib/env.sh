@@ -38,6 +38,8 @@ MPROXY_ENV="${MPROXY_ENV:-/etc/mtproxy/mtproxy.env}"
 MPROXY_HOME="${MPROXY_HOME:-/opt/MTProxy}"
 CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
 CADDY_SERVICE="${CADDY_SERVICE:-/etc/systemd/system/caddy.service}"
+# Caddyfile 备份前缀（del/uninstall 清备份用；与其余常量同风格可注入）
+CADDY_BACKUP_PREFIX="${CADDY_BACKUP_PREFIX:-$(dirname "$CADDYFILE")/Caddyfile.before-tg}"
 SYSTEMD_UNIT_DIR="${SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
 
 # 端口策略：WEB 代理类型固定 HTTPS + 443（协议规定），不支持修改端口

@@ -62,14 +62,19 @@ core_del() {
       info "正在还原原 Caddyfile..."
       cp -a "$backup" "$CADDYFILE"
       if caddy_validate; then
-        systemctl reload caddy
+        # 官方 caddy unit 无 ExecReload：跑着用 restart，没跑跳过（del 后要停 caddy）
+        if systemctl is-active --quiet caddy.service; then
+          systemctl restart caddy >/dev/null 2>&1 || warn "caddy 重启失败，手工检查: journalctl -u caddy -n 50"
+        fi
       else
         warn "还原后 validate 未过，请手工检查 $CADDYFILE"
       fi
     else
       # 无干净备份或备份已含 tg 痕迹：只摘我们的 site block，不整份恢复
       caddy_detach_fragment
-      caddy_validate >/dev/null 2>&1 && systemctl reload caddy 2>/dev/null || true
+      if systemctl is-active --quiet caddy.service && caddy_validate >/dev/null 2>&1; then
+        systemctl restart caddy >/dev/null 2>&1 || true
+      fi
     fi
   else
     # A/B 模式：Caddy 是我们装的，直接摘除
@@ -82,14 +87,16 @@ core_del() {
   # 3. 删官方单元与二进制（caddy 二进制保留：重装复用；/opt/MTProxy 连预置产物一并清：
   #    重装时流水线会重新下载预置产物，保留反而藏旧版本）
   info "正在删除官方组件..."
-  rm -f /etc/systemd/system/tproxy-server.service \
-        /etc/systemd/system/mtproxy.service \
-        /etc/systemd/system/tproxy-firewall.service \
-        /etc/systemd/system/refresh-mtproxy-config.timer \
-        /etc/systemd/system/refresh-mtproxy-config.service 2>/dev/null || true
+  rm -f "$SYSTEMD_UNIT_DIR/tproxy-server.service" \
+        "$SYSTEMD_UNIT_DIR/mtproxy.service" \
+        "$SYSTEMD_UNIT_DIR/tproxy-firewall.service" \
+        "$SYSTEMD_UNIT_DIR/refresh-mtproxy-config.timer" \
+        "$SYSTEMD_UNIT_DIR/refresh-mtproxy-config.service" 2>/dev/null || true
   systemctl daemon-reload
-  rm -f /usr/local/bin/tproxy-server 2>/dev/null || true
-  rm -rf /etc/tproxy-server /etc/mtproxy "$MPROXY_HOME" /srv/tproxy-site 2>/dev/null || true
+  rm -f "$CORE_BIN" 2>/dev/null || true
+  # 配置目录用变量路径（与 add 落位一致，可注入且真机默认即官方路径）
+  rm -rf "$(dirname "$TPROXY_CONFIG")" "$(dirname "$TPROXY_PROFILES")" \
+         "$(dirname "$MPROXY_ENV")" "$MPROXY_HOME" "$TPROXY_SITE_ROOT" 2>/dev/null || true
   # 清我们的 Caddyfile 备份（有正常用途的场景已在上一步还原/摘除完）
   rm -f "${CADDY_BACKUP_PREFIX}".* 2>/dev/null || true
 
