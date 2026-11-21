@@ -175,20 +175,15 @@ core_install_relay_binary() {
   install -o root -g root -m 0755 "$bindir/tproxy-server" "$CORE_BIN"
 }
 
-# 段 2（base_path）：官方生成逻辑（install.sh 61 行）
-core_gen_base_path() {
-  head -c 10 /dev/urandom | base32 | tr 'A-Z' 'a-z' | tr -d '\n'
-}
-
-# 段 9：config.json + profiles.json（官方 install.sh 204-222 行，字段与权限逐行一致）
+# 段 9：config.json + profiles.json（根路径部署：不写 base_path 字段）
+# $1=hostname $2=secret $3=public_source
 core_write_config() {
-  local host="$1" base_path="$2" secret="$3" public_source="$4"
+  local host="$1" secret="$2" public_source="$3"
   install -d -o root -g tproxy -m 0750 "$(dirname "$TPROXY_CONFIG")"
   bash "$TPROXY_SRC_DIR/deploy/ensure-token-key.sh"
   cat > "$TPROXY_CONFIG" <<EOF
 {
   "public_hostname": "$host",
-  "base_path": "$base_path",
   "listen": "127.0.0.1:8080",
   "admin_listen": "127.0.0.1:8081",
 $public_source
@@ -315,7 +310,7 @@ core_install_mode_a() {
     chown -R root:root "$TPROXY_SITE_ROOT"
   fi
   local public_source='  "public_dir": "'"$TPROXY_SITE_ROOT"'",'
-  core_write_config "$host" "$(core_gen_base_path)" "$secret" "$public_source"
+  core_write_config "$host" "$secret" "$public_source"
   core_write_mtproxy_env "$secret" "$host"
   core_install_caddy_config "$host" "$email"
   core_install_units
@@ -345,7 +340,7 @@ core_install_mode_c() {
     chown -R root:root "$TPROXY_SITE_ROOT"
   fi
   local public_source='  "public_dir": "'"$TPROXY_SITE_ROOT"'",'
-  core_write_config "$host" "$(core_gen_base_path)" "$secret" "$public_source"
+  core_write_config "$host" "$secret" "$public_source"
   core_write_mtproxy_env "$secret" "$host"
   core_install_caddy_config "$host" "$email"
   core_install_units
@@ -365,7 +360,7 @@ core_install_mode_c() {
   caddy_purge_tainted_backups
 
   # 追加我们的 site block
-  caddy_render_site "$host" "$port" "$(core_official_get '.base_path // ""')" "$email"
+  caddy_render_site "$host" "$port" "$email"
   caddy_attach_fragment
   if ! caddy_validate; then
     caddy_restore_backup "$pre_backup"
@@ -462,14 +457,9 @@ core_add() {
   esac
   rm -rf "$bindir"
 
-  # 官方跑完，从 config.json 读回实际 base_path（官方自动生成的随机 slug）
-  local base_path
-  base_path=$(core_official_get '.base_path // ""')
-
-  # 登记
+  # 登记（根路径部署：不再存 base_path）
   node_save \
     "hostname=$host" \
-    "base_path=$base_path" \
     "port=$port" \
     "secret=$secret" \
     "email=$email" \

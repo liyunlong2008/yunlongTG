@@ -23,9 +23,8 @@ caddy_file_has_tg_marks() {
   [ -f "$f" ] || return 1
   if grep -qF "import $TG_CADDY_DIR/*.conf" "$f"; then return 0; fi
   if grep -qF "# 由 ${BRAND} 管理" "$f"; then return 0; fi
-  # 兼容新旧：新渲染用 handle /<base>，旧版本用 handle_path /<base>，都算 tg 痕迹
-  if grep -qF "reverse_proxy 127.0.0.1:8080" "$f" \
-    && { grep -qF 'handle /' "$f" || grep -qF 'handle_path /' "$f"; }; then return 0; fi
+  # 根路径模式：不再有 /<base> 前缀路由，痕迹识别靠管理注释 + import 行 + 兜底转发组合
+  if grep -qF "# 由 ${BRAND} 管理" "$f" && grep -qF 'reverse_proxy 127.0.0.1:8080' "$f"; then return 0; fi
   return 1
 }
 
@@ -83,13 +82,12 @@ caddy_restore_backup() {
 # 我们的 site block 片段落位目录
 caddy_fragment_dir() { mkdir -p "$TG_CADDY_DIR"; chmod 755 "$TG_CADDY_DIR"; }
 
-# 渲染 site block 到 $TG_CADDY_DIR/site.conf
-# $1=hostname $2=port $3=base_path（来自 config.json，只读）
-# $4=email（可选）：add 链路 node.json 尚未写出，必须显式传；
+# 渲染 site block 到 $TG_CADDY_DIR/site.conf（根路径部署：无 base_path 前缀路由）
+# $1=hostname $2=port $3=email（可选）：add 链路 node.json 尚未写出，必须显式传；
 #   省略时读登记（change 等装后路径），仍无则 admin@$host 兜底
 caddy_render_site() {
-  local host="$1" port="$2" base="$3"
-  local acme_email="${4:-}"
+  local host="$1" port="$2"
+  local acme_email="${3:-}"
   if [ -z "$acme_email" ]; then
     acme_email=$(node_get email 2>/dev/null || true)
   fi
@@ -107,17 +105,8 @@ $site_addr {
 	tls "$acme_email"
 	encode zstd gzip
 
-	# 官方 BASE_PATH.md：relay 转发原始路径、含前缀、从不剥离；
-	# 故用 handle 保留前缀，否则桥接 capability 校验会因路径不符而失败
-	handle /$base/* {
-		reverse_proxy 127.0.0.1:8080
-	}
-	handle /$base {
-		reverse_proxy 127.0.0.1:8080
-	}
-
-	# 兜底交给 relay 分流：servePublic 对 / 返回伪装站首页 200、其余查静态文件；
-	# 旧 redir 会对根路径重定向到自己形成循环，且拦截伪装站首页
+	# 根路径部署：所有请求直接转发给 relay，由它分流
+	# （servePublic：/ → 伪装站首页 200；带 capability → 桥接页）
 	handle {
 		reverse_proxy 127.0.0.1:8080
 	}

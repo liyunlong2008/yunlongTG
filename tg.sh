@@ -40,7 +40,6 @@ cmd_info() {
   echo "节点信息："
   echo "  域名      $(node_get hostname)"
   echo "  端口      $(node_get port)"
-  echo "  路径      /$(node_get base_path)"
   echo "  模式      $(node_get mode)"
   echo "  邮箱      $(node_get email)"
   echo "  安装时间  $(node_get installed_at)"
@@ -67,22 +66,12 @@ cmd_info() {
 # ============================================================
 cmd_url() {
   node_exists_check
-  local host base secret server secret_field
+  local host secret
   host=$(node_get hostname)
-  base=$(node_get base_path)
   secret=$(node_get secret)
 
-  # WEB 代理类型固定 HTTPS + 443：server 不含端口，斜杠用 %2F 编码
-  if [ -n "$base" ] && [ "$base" != "none" ]; then
-    server="$host%2F$base"
-    # base64url(0x70 + hex secret)
-    secret_field=$(printf '70%s' "$secret" | xxd -r -p | base64 | tr '+/' '-_' | tr -d '=')
-  else
-    server="$host"
-    secret_field="$secret"
-  fi
-
-  echo "https://t.me/webproxy?server=$server&secret=$secret_field"
+  # 根路径部署（官方 ANDROID.md）：server 仅域名；secret 为明文 32 位 hex
+  echo "https://t.me/webproxy?server=$host&secret=$secret"
 }
 
 # ============================================================
@@ -233,9 +222,8 @@ core_change_hostname() {
   [ -n "$newhost" ] || error_exit "缺少新域名" "用法: tg change hostname tg2.example.com"
   detect_dns "$newhost"
 
-  local port base oldhost backup
+  local port oldhost backup
   port=$(node_get port)
-  base=$(node_get base_path)
   oldhost=$(node_get hostname)
   backup=$(caddy_backup)
 
@@ -247,7 +235,7 @@ core_change_hostname() {
     rm -f "$tmp"; error_exit "写 config.json 失败" "检查文件权限"
   fi
 
-  caddy_render_site "$newhost" "$port" "$base"
+  caddy_render_site "$newhost" "$port"
   caddy_write_env_hostname "$newhost"
   if [ "$(node_get caddy_shared)" = "true" ]; then
     caddy_attach_fragment

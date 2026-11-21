@@ -28,7 +28,7 @@ tg add --hostname tg.example.com --email you@example.com
 
 - One command to add a node, with a decoy site generated uniquely per machine
 - Automatic port detection: taken 443 fails with a clear message, no port switching
-- Node link plus a terminal QR code — scan with your phone and go
+- Node link plus a terminal QR code — scan with your phone and go (no path suffix; `server` is the bare hostname)
 - Change secret or hostname with a single command
 - Updates shipped via GitHub releases, with automatic rollback on failure
 - Clean uninstall, nothing left behind
