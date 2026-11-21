@@ -31,9 +31,8 @@ core_cleanup_remnants() {
     caddy_detach_fragment
   fi
   rm -rf "$TG_CADDY_DIR"
-  # 清我们的 Caddyfile 备份与官方接管副本（残留场景无登记，备份无还原用途）
-  rm -f "${CADDY_BACKUP_PREFIX}".* 2>/dev/null || true
-  rm -f "$(dirname "$CADDYFILE")/Caddyfile.tproxy" "$(dirname "$CADDYFILE")"/Caddyfile.before-tproxy.* 2>/dev/null || true
+  # 清我们的 Caddyfile 备份与官方接管副本（此时配置已还原/摘除，备份无保留价值）
+  caddy_purge_all_backups
 }
 
 core_del() {
@@ -97,8 +96,8 @@ core_del() {
   # 配置目录用变量路径（与 add 落位一致，可注入且真机默认即官方路径）
   rm -rf "$(dirname "$TPROXY_CONFIG")" "$(dirname "$TPROXY_PROFILES")" \
          "$(dirname "$MPROXY_ENV")" "$MPROXY_HOME" "$TPROXY_SITE_ROOT" 2>/dev/null || true
-  # 清我们的 Caddyfile 备份（有正常用途的场景已在上一步还原/摘除完）
-  rm -f "${CADDY_BACKUP_PREFIX}".* 2>/dev/null || true
+  # 清我们的 Caddyfile 备份（有正常用途的场景已在上一步还原/摘除完，两个前缀全清）
+  caddy_purge_all_backups
 
   # 4. nftables 官方规则清除（如有）
   if command -v nft >/dev/null 2>&1 && [ -f /etc/nftables.conf ]; then

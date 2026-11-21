@@ -3,9 +3,12 @@
 # 我们唯一自有状态；官方配置只读不写。
 
 # 初始化（不存在则建空壳）
+# /etc/tg 必须可被 caddy 用户(999)遍历，否则它读不到 /etc/tg/caddy/site.conf
+# 导致 import glob 失败、caddy active 但不监听（Bug #13）。节点密钥由 node.json 0600 保护。
 node_init() {
   mkdir -p "$TG_ETC_DIR" "$TG_CADDY_DIR"
-  chmod 700 "$TG_ETC_DIR"
+  chmod 755 "$TG_ETC_DIR"
+  chmod 755 "$TG_CADDY_DIR"
   if [ ! -s "$NODE_JSON" ]; then
     echo '{}' > "$NODE_JSON"
     chmod 600 "$NODE_JSON"

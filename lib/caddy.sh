@@ -56,6 +56,16 @@ caddy_purge_tainted_backups() {
   return 0
 }
 
+# del 收尾：清空两个前缀的全部备份（此时配置已还原/摘除，备份无保留价值）
+# before-tg.*（我们的）+ before-tproxy.*（官方安装段产生的），杜绝备份链增长
+caddy_purge_all_backups() {
+  local dir prefix
+  dir=$(dirname "$CADDYFILE")
+  prefix="${CADDY_BACKUP_PREFIX##*/}"
+  rm -f "$dir/$prefix".* "$dir"/Caddyfile.before-tproxy.* "$dir/Caddyfile.tproxy" 2>/dev/null || true
+  return 0
+}
+
 # 从备份恢复 Caddyfile（仅接受不含 tg 痕迹的干净备份）
 caddy_restore_backup() {
   local backup="$1"
