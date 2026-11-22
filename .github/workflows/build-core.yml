@@ -6,8 +6,14 @@ name: build-core
 
 on:
   workflow_dispatch:
+    inputs:
+      force:
+        description: 强制构建（跳过官方更新检测）
+        type: boolean
+        required: false
+        default: false
   schedule:
-    # 每日 04:30 UTC 跑一次，跟踪官方 master
+    # 每日 04:30 UTC 跑一次，跟踪官方 master（无更新则跳过构建）
     - cron: '30 4 * * *'
 
 permissions:
@@ -22,6 +28,28 @@ jobs:
           git clone --depth 1 https://github.com/telegramdesktop/tproxy-server.git src
           echo "SHORTSHA=$(git -C src rev-parse --short HEAD)" >> "$GITHUB_ENV"
           echo "BUILD_DATE=$(date +%Y%m%d)" >> "$GITHUB_ENV"
+
+      - name: Check official update (skip build if unchanged)
+        run: |
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            echo "force=true，跳过更新检测"
+            exit 0
+          fi
+          # 查最近 core-* tag（gh release list 按发布时间倒序），解析其 shortsha
+          latest_tag=$(gh release list -R liyunlong2008/yunlongTG --limit 10 --json tagName \
+            --jq '.[].tagName | select(startswith("core-"))' 2>/dev/null | head -1 || true)
+          if [ -z "$latest_tag" ]; then
+            echo "仓库尚无 core-* 历史 tag，首次构建"
+            exit 0
+          fi
+          last_sha=$(echo "$latest_tag" | sed -n 's/^core-[0-9]\{8\}-\(.*\)$/\1/p')
+          if [ -n "$last_sha" ] && [ "$last_sha" = "$SHORTSHA" ]; then
+            echo "官方 master 无更新（历史 tag $latest_tag，当前 SHORTSHA=$SHORTSHA），跳过构建"
+            exit 0
+          fi
+          echo "官方 master 有更新（历史 $latest_tag，当前 $SHORTSHA），继续构建"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Go (official pinned 1.26.5)
         uses: actions/setup-go@v5
