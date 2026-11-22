@@ -70,6 +70,9 @@ core_fetch_binaries() {
     rm -rf "$dir"
     error_exit "sha256 校验不通过，已丢弃下载产物" "可能是产物损坏或被篡改，重试 tg add；持续失败联系维护者"
   fi
+  # 下载的二进制必须可执行：add 流程 install -m 0755 落位不受影响，
+  # 但 update 流程 core_relay_swap 直接在临时目录执行候选二进制做 -check，无执行权限会 Permission denied
+  chmod +x "$dir/tproxy-server" "$dir/mtproto-proxy"
   echo "$dir"
 }
 
