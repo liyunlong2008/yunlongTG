@@ -30,9 +30,11 @@ jobs:
           echo "BUILD_DATE=$(date +%Y%m%d)" >> "$GITHUB_ENV"
 
       - name: Check official update (skip build if unchanged)
+        id: check
         run: |
           if [ "${{ github.event.inputs.force }}" = "true" ]; then
-            echo "force=true，跳过更新检测"
+            echo "force=true，跳过更新检测，强制构建"
+            echo "skip_build=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # 查最近 core-* tag（gh release list 按发布时间倒序），解析其 shortsha
@@ -40,32 +42,39 @@ jobs:
             --jq '.[].tagName | select(startswith("core-"))' 2>/dev/null | head -1 || true)
           if [ -z "$latest_tag" ]; then
             echo "仓库尚无 core-* 历史 tag，首次构建"
+            echo "skip_build=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           last_sha=$(echo "$latest_tag" | sed -n 's/^core-[0-9]\{8\}-\(.*\)$/\1/p')
           if [ -n "$last_sha" ] && [ "$last_sha" = "$SHORTSHA" ]; then
             echo "官方 master 无更新（历史 tag $latest_tag，当前 SHORTSHA=$SHORTSHA），跳过构建"
-            exit 0
+            echo "skip_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "官方 master 有更新（历史 $latest_tag，当前 $SHORTSHA），继续构建"
+            echo "skip_build=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "官方 master 有更新（历史 $latest_tag，当前 $SHORTSHA），继续构建"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Go (official pinned 1.26.5)
+        if: steps.check.outputs.skip_build != 'true'
         uses: actions/setup-go@v5
         with:
           go-version: '1.26.5'
 
       - name: Run go test
+        if: steps.check.outputs.skip_build != 'true'
         run: (cd src && go test ./...)
 
       - name: Build tproxy-server (linux/amd64)
+        if: steps.check.outputs.skip_build != 'true'
         run: |
           (cd src && go build -trimpath -ldflags='-s -w' -o tproxy-server ./cmd/tproxy-server)
           test -x src/tproxy-server
           cp src/tproxy-server tproxy-server
 
       - name: Build MTProxy backend (official pinned commit)
+        if: steps.check.outputs.skip_build != 'true'
         run: |
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends build-essential libssl-dev zlib1g-dev
@@ -81,11 +90,13 @@ jobs:
           cp mtproxy-src/objs/bin/mtproto-proxy mtproto-proxy
 
       - name: Compute sha256 manifest
+        if: steps.check.outputs.skip_build != 'true'
         run: |
           sha256sum tproxy-server mtproto-proxy > core.sha256
           cat core.sha256
 
       - name: Create core prerelease
+        if: steps.check.outputs.skip_build != 'true'
         run: |
           tag="core-${BUILD_DATE}-${SHORTSHA}"
           gh release create "$tag" -R liyunlong2008/yunlongTG \
