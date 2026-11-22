@@ -112,6 +112,9 @@ EOF
     || error_exit "token key 部署失败" "查看 /etc/tproxy-server/ 权限后重试"
 
   # 候选配置校验（官方 115 行）
+  if [ ! -x "$candidate_path" ]; then
+    error_exit "新核心二进制无执行权限" "chmod +x $candidate_path 后重试 tg update；持续失败重新下载"
+  fi
   "$candidate_path" -config "$config" -profiles-file "$profiles" -check \
     || error_exit "新核心与本机配置不匹配" "查看 core release 说明或回退到旧版 tg update"
 
